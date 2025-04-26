@@ -1,8 +1,8 @@
 // YouTube API key from your provided key
 const YOUTUBE_API_KEY = 'AIzaSyBCyoxXoj5mY2MeOCKzQqyBwVVoiC-8yDs';
 
-// For development/demo purposes, we'll use mock data if the API key isn't working
-const USE_MOCK_DATA = true;
+// Set to false to use real data from the YouTube API
+const USE_MOCK_DATA = false;
 
 /**
  * Search for YouTube videos containing the search term in the title
