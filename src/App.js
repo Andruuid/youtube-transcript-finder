@@ -1,9 +1,14 @@
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import './App.css';
 import { searchVideos, getVideoDetails, getChannelInfo, getVideoTranscript } from './services/youtubeService';
 import { processTranscript } from './services/geminiService';
 
 function App() {
+  const [selectedVideos, setSelectedVideos] = useState([]);
+  const [bulkSummary, setBulkSummary] = useState(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [specialSummary, setSpecialSummary] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [minFollowers, setMinFollowers] = useState(100000);
   const [videos, setVideos] = useState([]);
@@ -125,6 +130,75 @@ function App() {
     }
   };
 
+  // Handle checkbox toggle
+  const handleCheckboxChange = (videoId) => {
+    setSelectedVideos((prev) =>
+      prev.includes(videoId)
+        ? prev.filter((id) => id !== videoId)
+        : [...prev, videoId]
+    );
+  };
+
+  // Bulk summarize handler
+  const handleBulkSummarize = async () => {
+    setBulkLoading(true);
+    setBulkSummary(null);
+    try {
+      // Get all selected video objects
+      const selectedVideoObjs = videos.filter((v) => selectedVideos.includes(v.id));
+      // Fetch transcripts in parallel
+      const transcripts = await Promise.all(
+        selectedVideoObjs.map(async (video) => {
+          try {
+            const transcript = await getVideoTranscript(video.id);
+            return { title: video.snippet.title, transcript };
+          } catch {
+            return { title: video.snippet.title, transcript: '[Transcript unavailable]' };
+          }
+        })
+      );
+      let prompt;
+      if (specialSummary) {
+        prompt = `You are an expert at extracting and synthesizing information from multiple sources.
+
+Given the following YouTube video transcripts (provided below, separated clearly), perform the following for each video individually:
+
+Chapterized Summary: Break down the video into logical chapters based on the content flow. Each chapter should have a short title and a concise summary (3-5 sentences).
+
+Key Takeaways: List the 5-10 most important insights, lessons, or ideas from this video.
+
+After completing the summaries for each individual video, analyze all the videos together and:
+
+Unified Summary: Write a cohesive overview that connects the key themes and insights across all videos.
+
+Main Takeaways: List the top 5-10 most important, actionable takeaways from the combined knowledge of all videos.
+
+Formatting rules:
+
+Clearly label each video (Video 1, Video 2, etc.) and its parts (Chapters, Key Takeaways).
+
+Use bullet points for lists.
+
+Keep language clear, insightful, and professional.
+
+Avoid unnecessary repetition.
+
+Input:\n` +
+        transcripts.map((t, i) => `=== Video ${i + 1} ===\n${t.transcript}`).join('\n\n');
+      } else {
+        prompt =
+          'Please Summarize all youtube transcript togheter with main bulletpoints, key takeaway messages etc. Make another short summary to point out similaritys and differences in the transcript.\n' +
+          transcripts.map((t, i) => `Video${i + 1} (${t.title}): ${t.transcript}`).join('\n\n');
+      }
+      const summary = await processTranscript('', prompt);
+      setBulkSummary(summary);
+    } catch (err) {
+      setBulkSummary('Failed to process bulk summary.');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   return (
     <div className="App">
       <header className="App-header">
@@ -168,10 +242,47 @@ function App() {
         {error && <div className="error-message">{error}</div>}
         
         <div className="results-container">
+          {videos.length > 0 && (
+            <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={specialSummary}
+                  onChange={e => setSpecialSummary(e.target.checked)}
+                  style={{ marginRight: 6 }}
+                />
+                Special Summary
+              </label>
+              <button
+                className="process-button"
+                disabled={selectedVideos.length === 0 || bulkLoading}
+                onClick={handleBulkSummarize}
+              >
+                {bulkLoading ? 'Processing...' : `Bulk Summarize (${selectedVideos.length})`}
+              </button>
+            </div>
+          )}
+          {bulkSummary && (
+            <div className="processed-transcript">
+              <h4>Bulk Summary</h4>
+              <ReactMarkdown>{bulkSummary}</ReactMarkdown>
+            </div>
+          )}
           {videos.length > 0 ? (
             <div className="video-grid">
-              {videos.map((video) => (
+              {videos
+                .slice()
+                .sort((a, b) => new Date(b.snippet.publishedAt) - new Date(a.snippet.publishedAt))
+                .map((video) => (
                 <div key={video.id} className="video-card">
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedVideos.includes(video.id)}
+                      onChange={() => handleCheckboxChange(video.id)}
+                      style={{ marginRight: 8 }}
+                    />
+                  </div>
                   <img 
                     src={video.snippet.thumbnails.medium.url} 
                     alt={video.snippet.title}
@@ -180,6 +291,9 @@ function App() {
                   <div className="video-info">
                     <h3 className="video-title">{video.snippet.title}</h3>
                     <p className="channel-name">{video.snippet.channelTitle}</p>
+                    <p className="published-date">
+                      Published: {new Date(video.snippet.publishedAt).toLocaleDateString()}
+                    </p>
                     <p className="subscriber-count">
                       {video.channelSubscribers.toLocaleString()} subscribers
                     </p>

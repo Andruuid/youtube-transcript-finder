@@ -244,13 +244,18 @@
   color: #1a73e8;
 }
 
-.transcript-text pre {
+.transcript-text pre,
+.processed-transcript pre {
   white-space: pre-wrap;
   font-family: inherit;
   margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.5;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  word-break: break-word;
+  overflow-x: auto;
+  max-width: 100%;
 }
+
 
 .no-results {
   padding: 2rem;
@@ -296,6 +301,11 @@
   background-color: #e6f4ea;
   border-radius: 4px;
   border-left: 4px solid #34a853;
+  max-width: 100%;
+  overflow-x: auto;
+  word-break: break-word;
+  white-space: normal;
+  text-align: left;
 }
 
 .App-link {

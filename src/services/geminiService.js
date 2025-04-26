@@ -6,9 +6,11 @@ const GEMINI_API_KEY = 'AIzaSyBkRj0-HEGzDcYBdjy-n1fs5d6ZqzUlgYQ';
  * @param {string} transcript - The transcript text to process
  * @returns {Promise<string>} - The processed/summarized transcript
  */
-export const processTranscript = async (transcript) => {
+export const processTranscript = async (transcript, customPrompt) => {
   try {
-    const prompt = `Please summarize the following YouTube transcript with bulletpoints, takeaway messages, and key points.\n\nTranscript:\n${transcript}`;
+    const prompt = customPrompt
+      ? customPrompt
+      : `Please summarize the following YouTube transcript with bulletpoints, takeaway messages, and key points.\n\nTranscript:\n${transcript}`;
     const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + GEMINI_API_KEY, {
       method: 'POST',
       headers: {
