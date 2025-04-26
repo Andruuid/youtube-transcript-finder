@@ -198,16 +198,16 @@ export const getChannelInfo = async (channelId) => {
  * @returns {Promise<string>} - The transcript text
  */
 export const getVideoTranscript = async (videoId) => {
-  // In a real implementation, this would call a backend API
-  // that uses a library like youtube-transcript-api
-  
-  // For demonstration purposes, we'll return a mock transcript
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(`This is a sample transcript for video ${videoId}.
-It would contain the actual text from the video.
-In a real application, this would be fetched from YouTube's API.
-The transcript would be properly formatted and timed.`);
-    }, 1000);
-  });
+  try {
+    const response = await fetch(`http://localhost:5001/transcript/${videoId}`);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to fetch transcript');
+    }
+    const data = await response.json();
+    return data.transcript;
+  } catch (error) {
+    console.error('Error fetching transcript:', error);
+    throw error;
+  }
 };
