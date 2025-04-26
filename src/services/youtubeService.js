@@ -1,5 +1,5 @@
 // YouTube API key from your provided key
-const YOUTUBE_API_KEY = 'AIzaSyBCyoxXoj5mY2MeOCKzQqyBwVVoiC-8yDs';
+const YOUTUBE_API_KEY = 'AIzaSyCQ3uQb0J9RH7aCrfMdy4ZKCinXuZQqvbk';
 
 // Set to false to use real data from the YouTube API
 const USE_MOCK_DATA = false;
@@ -64,7 +64,8 @@ export const searchVideos = async (searchTerm, maxResults = 50) => {
     );
     
     if (!searchResponse.ok) {
-      throw new Error('Failed to fetch videos');
+      const errorBody = await searchResponse.text();
+      throw new Error(`Failed to fetch videos: ${errorBody}`);
     }
     
     return await searchResponse.json();
