@@ -50,6 +50,8 @@ export default function ChannelMonitor() {
   const [addBusy, setAddBusy] = useState(false);
   const [addError, setAddError] = useState('');
   const [sinceDate, setSinceDate] = useState(() => formatLocalDateInputValue());
+  /** 0 = no filter; 61 skips most Shorts */
+  const [minVideoLengthSec, setMinVideoLengthSec] = useState(61);
   const [checkBusy, setCheckBusy] = useState(false);
   const [hasChecked, setHasChecked] = useState(false);
   const [checkErrors, setCheckErrors] = useState([]);
@@ -108,7 +110,11 @@ export default function ChannelMonitor() {
     setCheckBusy(true);
     try {
       const payload = channels.map(({ id, input }) => ({ id, input }));
-      const { videos, errors } = await checkChannelsForNewVideos(payload, sinceDate);
+      const { videos, errors } = await checkChannelsForNewVideos(
+        payload,
+        sinceDate,
+        minVideoLengthSec
+      );
       setResults(videos);
       setCheckErrors(errors);
     } catch (e) {
@@ -182,6 +188,21 @@ export default function ChannelMonitor() {
             value={sinceDate}
             onChange={(e) => setSinceDate(e.target.value)}
           />
+          <label className="channel-date-label" htmlFor="min-len-sec">
+            Min. length (sec)
+          </label>
+          <input
+            id="min-len-sec"
+            type="number"
+            className="channel-date-input channel-min-len-input"
+            min={0}
+            step={1}
+            title="0 = include Shorts. 61 ≈ hide most Shorts."
+            value={minVideoLengthSec}
+            onChange={(e) =>
+              setMinVideoLengthSec(Math.max(0, Number(e.target.value) || 0))
+            }
+          />
           <button
             type="button"
             className="search-button"
@@ -243,7 +264,11 @@ export default function ChannelMonitor() {
             channels.length > 0 &&
             checkErrors.length === 0 && (
               <p className="channel-empty">
-                No new videos since the selected date.
+                No new videos since the selected date
+                {minVideoLengthSec > 0
+                  ? ` (at least ${minVideoLengthSec}s long)`
+                  : ''}
+                .
               </p>
             )}
           {!checkBusy && !hasChecked && channels.length > 0 && (

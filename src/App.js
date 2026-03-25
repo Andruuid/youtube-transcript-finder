@@ -2,7 +2,13 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import './App.css';
 import ChannelMonitor from './components/ChannelMonitor';
-import { searchVideos, getVideoDetails, getChannelInfo, getVideoTranscript } from './services/youtubeService';
+import {
+  searchVideos,
+  getVideoDetails,
+  getChannelInfo,
+  getVideoTranscript,
+  iso8601DurationToSeconds
+} from './services/youtubeService';
 import { processTranscript } from './services/geminiService';
 
 function App() {
@@ -13,6 +19,8 @@ function App() {
   const [specialSummary, setSpecialSummary] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [minFollowers, setMinFollowers] = useState(100000);
+  /** Minimum video length in seconds (0 = off). 61 hides most Shorts. */
+  const [minVideoLengthSec, setMinVideoLengthSec] = useState(61);
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -45,11 +53,15 @@ function App() {
       // Then, get detailed information about these videos
       const videosData = await getVideoDetails(videoIds);
       
-      // Filter videos by subscriber count and has captions
-      const filteredVideos = videosData.items.filter(video => {
-        // Check if the video has captions
+      // Filter by captions, optional minimum duration (skip Shorts)
+      const filteredVideos = videosData.items.filter((video) => {
         const hasCaptions = video.contentDetails.caption === 'true';
-        return hasCaptions;
+        if (!hasCaptions) return false;
+        if (minVideoLengthSec > 0) {
+          const sec = iso8601DurationToSeconds(video.contentDetails?.duration);
+          if (sec < minVideoLengthSec) return false;
+        }
+        return true;
       });
       
       // For each video, check if the channel has enough subscribers
@@ -78,7 +90,9 @@ function App() {
       setVideos(validVideos);
       
       if (validVideos.length === 0) {
-        setError('No videos found with available transcripts and minimum follower count');
+        setError(
+          'No videos matched your filters (captions, minimum length, and follower count).'
+        );
       }
     } catch (err) {
       setError('Error fetching videos: ' + err.message);
@@ -255,7 +269,23 @@ Input:\n` +
               className="followers-input"
             />
           </div>
-          
+
+          <div className="followers-filter">
+            <label htmlFor="minVideoLengthSec">Min. video length (sec):</label>
+            <input
+              type="number"
+              id="minVideoLengthSec"
+              value={minVideoLengthSec}
+              onChange={(e) =>
+                setMinVideoLengthSec(Math.max(0, Number(e.target.value) || 0))
+              }
+              min="0"
+              step="1"
+              title="0 = no minimum. 61 ≈ skip most Shorts."
+              className="followers-input"
+            />
+          </div>
+
           <button 
             onClick={handleSearch} 
             className="search-button"

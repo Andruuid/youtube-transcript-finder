@@ -430,6 +430,11 @@
   border-radius: 4px;
 }
 
+.channel-min-len-input {
+  width: 4.5rem;
+  min-width: 4.5rem;
+}
+
 .channel-monitor-columns {
   display: grid;
   grid-template-columns: 1fr;

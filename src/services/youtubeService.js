@@ -376,6 +376,49 @@ function chunkArray(arr, size) {
 }
 
 /**
+ * Parse YouTube contentDetails.duration (ISO 8601, e.g. PT1H2M3S, PT45S) to seconds.
+ * @param {string} iso
+ * @returns {number}
+ */
+export function iso8601DurationToSeconds(iso) {
+  if (!iso || typeof iso !== 'string' || !iso.startsWith('PT')) {
+    return 0;
+  }
+  const match = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/);
+  if (!match) {
+    return 0;
+  }
+  const h = parseInt(match[1] || '0', 10);
+  const m = parseInt(match[2] || '0', 10);
+  const s = parseFloat(match[3] || '0');
+  return Math.round(h * 3600 + m * 60 + s);
+}
+
+/**
+ * Filter upload rows by minimum duration (uses videos.list batches).
+ * @param {Array<{ videoId: string }>} rows
+ * @param {number} minSeconds
+ * @returns {Promise<Array>}
+ */
+async function filterUploadsByMinDuration(rows, minSeconds) {
+  if (!rows.length || minSeconds <= 0) {
+    return rows;
+  }
+  const ids = [...new Set(rows.map((r) => r.videoId))];
+  const durationById = new Map();
+  for (const batch of chunkArray(ids, 50)) {
+    const data = await getVideoDetails(batch.join(','));
+    for (const v of data.items || []) {
+      durationById.set(
+        v.id,
+        iso8601DurationToSeconds(v.contentDetails?.duration)
+      );
+    }
+  }
+  return rows.filter((r) => (durationById.get(r.videoId) ?? 0) >= minSeconds);
+}
+
+/**
  * Keep only rows whose videos have captions (batch videos.list).
  * @param {Array<{ videoId: string }>} rows
  * @returns {Promise<Array>}
@@ -407,9 +450,14 @@ export const filterVideosWithCaptions = async (rows) => {
  * while transcripts may still be available via the transcript service.
  * @param {Array<{ id: string, input: string }>} savedChannels
  * @param {string} dateYmd
+ * @param {number} [minDurationSeconds=0] — drop videos shorter than this (e.g. 61 to skip most Shorts)
  * @returns {Promise<{ videos: Array, errors: Array<{ channelId: string, input: string, message: string }> }>}
  */
-export const checkChannelsForNewVideos = async (savedChannels, dateYmd) => {
+export const checkChannelsForNewVideos = async (
+  savedChannels,
+  dateYmd,
+  minDurationSeconds = 0
+) => {
   const videos = [];
   const errors = [];
   for (const ch of savedChannels) {
@@ -426,7 +474,11 @@ export const checkChannelsForNewVideos = async (savedChannels, dateYmd) => {
     }
   }
   videos.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
-  return { videos, errors };
+  const filtered =
+    minDurationSeconds > 0
+      ? await filterUploadsByMinDuration(videos, minDurationSeconds)
+      : videos;
+  return { videos: filtered, errors };
 };
 
 /**
