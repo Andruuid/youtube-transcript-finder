@@ -127,8 +127,12 @@ export default function ChannelMonitor() {
     try {
       const text = await getVideoTranscript(videoId);
       setTranscript({ loading: false, text, error: null });
-    } catch {
-      setTranscript({ loading: false, text: null, error: 'Failed to load transcript' });
+    } catch (e) {
+      setTranscript({
+        loading: false,
+        text: null,
+        error: e.message || 'Failed to load transcript'
+      });
     }
   }, []);
 

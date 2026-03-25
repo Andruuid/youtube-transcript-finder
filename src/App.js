@@ -100,10 +100,10 @@ function App() {
         text: transcript 
       });
     } catch (err) {
-      setActiveTranscript({ 
-        videoId, 
-        loading: false, 
-        error: 'Failed to load transcript' 
+      setActiveTranscript({
+        videoId,
+        loading: false,
+        error: err.message || 'Failed to load transcript'
       });
     }
   };

@@ -430,22 +430,68 @@ export const checkChannelsForNewVideos = async (savedChannels, dateYmd) => {
 };
 
 /**
- * Get transcript for a video (this would typically be a backend API call)
- * For now, this is a mock implementation
+ * Transcript API URL. In development, use a relative path so Create React App's
+ * "proxy" forwards to the backend and avoids browser CORS blocks.
+ * For production or a remote API, set REACT_APP_TRANSCRIPT_API_URL (no trailing slash).
+ */
+function transcriptRequestUrl(videoId) {
+  const base = (process.env.REACT_APP_TRANSCRIPT_API_URL || '').replace(/\/$/, '');
+  const path = `/transcript/${encodeURIComponent(videoId)}`;
+  return base ? `${base}${path}` : path;
+}
+
+/**
+ * Get transcript for a video via local or configured transcript service.
  * @param {string} videoId - The video ID
  * @returns {Promise<string>} - The transcript text
  */
 export const getVideoTranscript = async (videoId) => {
+  const url = transcriptRequestUrl(videoId);
+  let response;
   try {
-    const response = await fetch(`http://localhost:5001/transcript/${videoId}`);
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to fetch transcript');
-    }
-    const data = await response.json();
-    return data.transcript;
-  } catch (error) {
-    console.error('Error fetching transcript:', error);
-    throw error;
+    response = await fetch(url);
+  } catch (e) {
+    const hint =
+      'Start the transcript server (e.g. port 5001) and restart npm after adding proxy, or set REACT_APP_TRANSCRIPT_API_URL.';
+    console.error('Error fetching transcript:', e);
+    throw new Error(
+      e.name === 'TypeError' && String(e.message).includes('fetch')
+        ? `Could not reach transcript service. ${hint}`
+        : e.message || 'Network error'
+    );
   }
+
+  const raw = await response.text();
+
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const errBody = raw ? JSON.parse(raw) : {};
+      detail =
+        (typeof errBody.error === 'string' && errBody.error) ||
+        errBody.error?.message ||
+        errBody.message ||
+        '';
+    } catch {
+      const stripped = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (stripped) detail = stripped.slice(0, 500);
+    }
+    throw new Error(
+      detail
+        ? `Transcript service error (HTTP ${response.status}): ${detail}`
+        : `Transcript service error (HTTP ${response.status})`
+    );
+  }
+
+  let data;
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error('Transcript service returned invalid JSON');
+  }
+
+  if (data.transcript == null || data.transcript === '') {
+    throw new Error('Transcript service returned no transcript text');
+  }
+  return data.transcript;
 };
