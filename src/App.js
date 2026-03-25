@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import './App.css';
+import ChannelMonitor from './components/ChannelMonitor';
 import { searchVideos, getVideoDetails, getChannelInfo, getVideoTranscript } from './services/youtubeService';
 import { processTranscript } from './services/geminiService';
 
 function App() {
+  const [activeTab, setActiveTab] = useState('search');
   const [selectedVideos, setSelectedVideos] = useState([]);
   const [bulkSummary, setBulkSummary] = useState(null);
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -203,10 +205,34 @@ Input:\n` +
     <div className="App">
       <header className="App-header">
         <h1>YouTube Transcript Finder</h1>
-        <p>Search for YouTube videos with available transcripts</p>
+        <p>
+          {activeTab === 'search'
+            ? 'Search for YouTube videos with available transcripts'
+            : 'Monitor saved channels for new uploads and read transcripts'}
+        </p>
+        <nav className="app-tabs" aria-label="Main">
+          <button
+            type="button"
+            className={activeTab === 'search' ? 'app-tab app-tab-active' : 'app-tab'}
+            onClick={() => setActiveTab('search')}
+          >
+            Search
+          </button>
+          <button
+            type="button"
+            className={activeTab === 'channels' ? 'app-tab app-tab-active' : 'app-tab'}
+            onClick={() => setActiveTab('channels')}
+          >
+            Channel monitor
+          </button>
+        </nav>
       </header>
-      
+
       <main className="App-main">
+        {activeTab === 'channels' ? (
+          <ChannelMonitor />
+        ) : (
+          <>
         <div className="search-container">
           <input
             type="text"
@@ -362,6 +388,8 @@ Input:\n` +
             </p>
           )}
         </div>
+          </>
+        )}
       </main>
       
       <footer className="App-footer">
