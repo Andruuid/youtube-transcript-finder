@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Channel {
+  id               Int      @id @default(autoincrement())
+  youtubeChannelId String   @unique
+  title            String
+  handle           String?
+  lastSyncedAt     DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  videos           Video[]
+
+  @@index([title])
+}
+
+model Video {
+  id                Int      @id @default(autoincrement())
+  youtubeVideoId    String   @unique
+  channelId         Int
+  title             String
+  description       String
+  publishedAt       DateTime
+  thumbnailUrl      String?
+  hasTranscript     Boolean  @default(false)
+  transcriptText    String?
+  transcriptFetchedAt DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  channel           Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, publishedAt(sort: Desc)])
+  @@index([hasTranscript])
+}

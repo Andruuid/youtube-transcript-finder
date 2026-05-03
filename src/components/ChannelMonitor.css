@@ -57,6 +57,41 @@
   border-top: 1px solid #eee;
 }
 
+.channel-datetime-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.9rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid #eee;
+}
+
+.channel-datetime-input {
+  min-width: 11rem;
+}
+
+.channel-clear-dates-button {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #1a73e8;
+  background: #f8f9fa;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.channel-clear-dates-button:hover:not(:disabled) {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+}
+
+.channel-clear-dates-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .channel-date-label {
   font-weight: 500;
   color: #555;
@@ -170,6 +205,27 @@
   word-break: break-all;
 }
 
+.channel-saved-row-button {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.channel-saved-row-button:hover .channel-saved-title {
+  color: #1a73e8;
+}
+
 .channel-remove-button {
   flex-shrink: 0;
   padding: 0.35rem 0.65rem;
@@ -242,6 +298,14 @@
 .channel-get-transcripts-button {
   min-width: 10.5rem;
   margin-left: auto;
+}
+
+.channel-download-one-button {
+  display: inline-block;
+  margin-top: 0.35rem;
+  margin-left: 0.75rem;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.88rem;
 }
 
 .channel-bulk-status {

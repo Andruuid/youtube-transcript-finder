@@ -2,8 +2,8 @@ import React from 'react';
 import './AppNav.css';
 
 export const APP_VIEWS = [
-  { id: 'search', label: 'Search' },
   { id: 'channels', label: 'Channel monitor' },
+  { id: 'search', label: 'Search' },
   { id: 'audio', label: 'Audio download' }
 ];
 
@@ -12,7 +12,7 @@ export function viewSubtitle(viewId) {
     case 'search':
       return 'Search for YouTube videos with available transcripts';
     case 'channels':
-      return 'Monitor saved channels for new uploads and read transcripts';
+      return 'Persistent channel library with downloaded transcript tracking';
     case 'audio':
       return 'Download a YouTube video as MP3 audio (server uses yt-dlp)';
     default:

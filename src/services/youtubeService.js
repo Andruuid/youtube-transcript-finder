@@ -1,5 +1,4 @@
-// YouTube API key from your provided key
-const YOUTUBE_API_KEY = 'AIzaSyCQ3uQb0J9RH7aCrfMdy4ZKCinXuZQqvbk';
+const YOUTUBE_API_KEY = process.env.REACT_APP_YOUTUBE_API_KEY || '';
 
 // Set to false to use real data from the YouTube API
 const USE_MOCK_DATA = false;
@@ -12,6 +11,9 @@ const USE_MOCK_DATA = false;
  */
 export const searchVideos = async (searchTerm, maxResults = 50) => {
   try {
+    if (!YOUTUBE_API_KEY && !USE_MOCK_DATA) {
+      throw new Error('Missing REACT_APP_YOUTUBE_API_KEY');
+    }
     if (USE_MOCK_DATA) {
       console.log('Using mock data for search');
       // Return mock search results
@@ -86,6 +88,9 @@ export const searchVideos = async (searchTerm, maxResults = 50) => {
  */
 export const getVideoDetails = async (videoIds) => {
   try {
+    if (!YOUTUBE_API_KEY && !USE_MOCK_DATA) {
+      throw new Error('Missing REACT_APP_YOUTUBE_API_KEY');
+    }
     if (USE_MOCK_DATA) {
       console.log('Using mock data for video details');
       // Parse the videoIds string to get an array of IDs
@@ -142,6 +147,9 @@ export const getVideoDetails = async (videoIds) => {
  */
 export const getChannelInfo = async (channelId) => {
   try {
+    if (!YOUTUBE_API_KEY && !USE_MOCK_DATA) {
+      throw new Error('Missing REACT_APP_YOUTUBE_API_KEY');
+    }
     if (USE_MOCK_DATA) {
       console.log('Using mock data for channel info');
       // Generate a random subscriber count between 100k and 10M
@@ -238,6 +246,9 @@ export const resolveChannel = async (rawInput) => {
   if (USE_MOCK_DATA) {
     return { id: 'mock-channel-uc', title: 'Mock Channel' };
   }
+  if (!YOUTUBE_API_KEY) {
+    throw new Error('Missing REACT_APP_YOUTUBE_API_KEY');
+  }
   const parsed = parseChannelInput(rawInput);
   let url;
   if (parsed.type === 'id') {
@@ -273,6 +284,9 @@ export const resolveChannel = async (rawInput) => {
 export const getChannelUploadsPlaylistId = async (channelId) => {
   if (USE_MOCK_DATA) {
     return 'mock-uploads-playlist';
+  }
+  if (!YOUTUBE_API_KEY) {
+    throw new Error('Missing REACT_APP_YOUTUBE_API_KEY');
   }
   const res = await fetch(
     `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${encodeURIComponent(

@@ -14,7 +14,7 @@ import {
 import { processTranscript } from './services/geminiService';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('search');
+  const [activeTab, setActiveTab] = useState('channels');
   const [selectedVideos, setSelectedVideos] = useState([]);
   const [bulkSummary, setBulkSummary] = useState(null);
   const [bulkLoading, setBulkLoading] = useState(false);

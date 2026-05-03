@@ -1,49 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import './ChannelMonitor.css';
 import {
-  resolveChannel,
-  checkChannelsForNewVideos,
-  getVideoTranscript
-} from '../services/youtubeService';
-
-const STORAGE_KEY = 'ytf_saved_channels';
-
-function formatLocalDateInputValue(d = new Date()) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function loadChannels() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (c) => c && typeof c.id === 'string' && typeof c.input === 'string'
-    );
-  } catch {
-    return [];
-  }
-}
-
-function saveChannels(list) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  } catch {
-    /* ignore quota */
-  }
-}
-
-function splitTranscriptParagraphs(text) {
-  if (!text) return [];
-  return text
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-}
+  downloadTranscript,
+  listChannels,
+  listChannelVideos,
+  removeChannel,
+  searchLibrary,
+  syncChannel
+} from '../services/libraryService';
 
 function sanitizeFilePart(value, fallback = 'untitled') {
   const noIllegalChars = String(value || '').replace(/[<>:"/\\|?*]/g, '');
@@ -57,125 +21,181 @@ function sanitizeFilePart(value, fallback = 'untitled') {
   return cleaned || fallback;
 }
 
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function splitTranscriptParagraphs(text) {
+  if (!text) return [];
+  return text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
 }
 
-function renderHighlightedText(text, tokens, className) {
-  const source = String(text || '');
-  if (!source) {
-    return <span className={className} />;
+function mergeVideosById(items) {
+  const map = new Map();
+  for (const v of items) {
+    map.set(v.youtubeVideoId, v);
   }
-  if (!tokens.length) {
-    return <span className={className}>{source}</span>;
-  }
-  const pattern = tokens.map(escapeRegExp).join('|');
-  if (!pattern) {
-    return <span className={className}>{source}</span>;
-  }
-  const regex = new RegExp(`(${pattern})`, 'gi');
-  const parts = source.split(regex);
-  return (
-    <span className={className}>
-      {parts.map((part, idx) =>
-        tokens.includes(part.toLowerCase()) ? (
-          <mark key={`${part}-${idx}`} className="channel-hit-mark">
-            {part}
-          </mark>
-        ) : (
-          <React.Fragment key={`${part}-${idx}`}>{part}</React.Fragment>
-        )
-      )}
-    </span>
+  return [...map.values()].sort(
+    (a, b) => new Date(b.publishedAt) - new Date(a.publishedAt)
   );
+}
+
+/** Value for `<input type="datetime-local">` in local timezone. */
+function formatDatetimeLocalValue(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const y = d.getFullYear();
+  const m = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const h = pad(d.getHours());
+  const min = pad(d.getMinutes());
+  return `${y}-${m}-${day}T${h}:${min}`;
+}
+
+/** End of local calendar day (23:59), used as default “Published to = today”. */
+function formatEndOfTodayLocalValue() {
+  const d = new Date();
+  d.setHours(23, 59, 0, 0);
+  return formatDatetimeLocalValue(d);
+}
+
+function parseDatetimeLocalToMs(value) {
+  if (!value || typeof value !== 'string') return null;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** Keeps videos whose publishedAt falls in [from, to] when bounds are set (local picker values). */
+function filterVideosByPublishedRange(items, publishedFrom, publishedTo) {
+  const fromMs = parseDatetimeLocalToMs(publishedFrom);
+  const toMs = parseDatetimeLocalToMs(publishedTo);
+  if (fromMs == null && toMs == null) return items;
+  return items.filter((v) => {
+    const t = new Date(v.publishedAt).getTime();
+    if (Number.isNaN(t)) return false;
+    if (fromMs != null && t < fromMs) return false;
+    if (toMs != null && t > toMs) return false;
+    return true;
+  });
 }
 
 export default function ChannelMonitor() {
-  const [channels, setChannels] = useState(() => loadChannels());
-  const [selectedChannelIds, setSelectedChannelIds] = useState(
-    () => new Set(loadChannels().map((c) => c.id))
-  );
-  const [newInput, setNewInput] = useState('');
+  const [channels, setChannels] = useState([]);
+  const [channelInput, setChannelInput] = useState('');
   const [addBusy, setAddBusy] = useState(false);
-  const [addError, setAddError] = useState('');
-  const [sinceDate, setSinceDate] = useState(() => formatLocalDateInputValue());
-  /** 0 = no filter; 61 skips most Shorts */
-  const [minVideoLengthSec, setMinVideoLengthSec] = useState(61);
-  const [checkBusy, setCheckBusy] = useState(false);
-  const [hasChecked, setHasChecked] = useState(false);
-  const [checkErrors, setCheckErrors] = useState([]);
-  const [results, setResults] = useState([]);
-  const [selectedVideoId, setSelectedVideoId] = useState(null);
-  const [transcript, setTranscript] = useState({
-    loading: false,
-    text: null,
-    error: null
-  });
+  const [loading, setLoading] = useState(false);
+  const [downloadingVideoId, setDownloadingVideoId] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedChannelId, setSelectedChannelId] = useState('');
+  const [selectedChannelIds, setSelectedChannelIds] = useState(() => new Set());
+  const [videos, setVideos] = useState([]);
+  /** `datetime-local` strings (empty = no bound). `publishedTo` defaults to end of today (local). */
+  const [publishedFrom, setPublishedFrom] = useState('');
+  const [publishedTo, setPublishedTo] = useState(() => formatEndOfTodayLocalValue());
+  const [selectedVideoId, setSelectedVideoId] = useState('');
   const [selectedVideoIds, setSelectedVideoIds] = useState(() => new Set());
+  const [error, setError] = useState('');
+  const [statusMessage, setStatusMessage] = useState('');
   const [bulkDownload, setBulkDownload] = useState({
     loading: false,
     message: '',
     error: ''
   });
-  /** OR-match on title + description; filters the list in memory after Check */
-  const [keywordFilter, setKeywordFilter] = useState('');
-  /** Invalidate in-flight getVideoTranscript so stale responses never repopulate UI */
-  const transcriptFetchSeqRef = useRef(0);
 
-  useEffect(() => {
-    saveChannels(channels);
-  }, [channels]);
+  const selectedChannels = useMemo(
+    () => channels.filter((c) => selectedChannelIds.has(c.youtubeChannelId)),
+    [channels, selectedChannelIds]
+  );
 
-  const handleAdd = async () => {
-    const trimmed = newInput.trim();
-    if (!trimmed) {
-      setAddError('Enter a channel URL, @handle, or channel ID');
-      return;
-    }
-    setAddError('');
-    setAddBusy(true);
-    try {
-      const { id, title } = await resolveChannel(trimmed);
-      if (channels.some((c) => c.id === id)) {
-        setAddError('This channel is already in the list');
-        return;
-      }
-      setChannels((prev) => [...prev, { id, input: trimmed, title }]);
-      setSelectedChannelIds((prev) => {
-        const next = new Set(prev);
-        next.add(id);
-        return next;
-      });
-      setNewInput('');
-    } catch (e) {
-      setAddError(e.message || 'Could not add channel');
-    } finally {
-      setAddBusy(false);
-    }
-  };
-
-  const handleRemove = (id) => {
-    setChannels((prev) => prev.filter((c) => c.id !== id));
-    setSelectedChannelIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-    setResults((prev) => prev.filter((v) => v.channelId !== id));
-  };
-
-  const selectedChannels = channels.filter((c) => selectedChannelIds.has(c.id));
   const allChannelsSelected =
     channels.length > 0 && selectedChannels.length === channels.length;
 
-  const toggleChannelSelection = (channelId) => {
+  const selectedVideo = useMemo(
+    () => videos.find((v) => v.youtubeVideoId === selectedVideoId) || null,
+    [videos, selectedVideoId]
+  );
+
+  const visibleVideos = useMemo(
+    () => filterVideosByPublishedRange(videos, publishedFrom, publishedTo),
+    [videos, publishedFrom, publishedTo]
+  );
+
+  useEffect(() => {
+    if (!selectedVideoId) return;
+    const stillVisible = visibleVideos.some((v) => v.youtubeVideoId === selectedVideoId);
+    if (!stillVisible) setSelectedVideoId('');
+  }, [visibleVideos, selectedVideoId]);
+
+  const loadChannels = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const loaded = await listChannels();
+      setChannels(loaded);
+      setSelectedChannelIds((prev) => {
+        if (prev.size === 0 && loaded.length > 0) {
+          return new Set(loaded.map((c) => c.youtubeChannelId));
+        }
+        const next = new Set();
+        for (const c of loaded) {
+          if (prev.has(c.youtubeChannelId)) next.add(c.youtubeChannelId);
+        }
+        if (next.size === 0 && loaded.length > 0) {
+          return new Set(loaded.map((c) => c.youtubeChannelId));
+        }
+        return next;
+      });
+      setSelectedChannelId((prev) => prev || loaded[0]?.youtubeChannelId || '');
+    } catch (e) {
+      setError(e.message || 'Failed to load channels');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadChannels();
+  }, [loadChannels]);
+
+  const refreshVideos = useCallback(async () => {
+    const ids = channels
+      .filter((c) => selectedChannelIds.has(c.youtubeChannelId))
+      .map((c) => c.youtubeChannelId);
+    if (!ids.length) {
+      setVideos([]);
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      if (searchTerm.trim()) {
+        const allResults = await searchLibrary(searchTerm.trim(), '');
+        const idSet = new Set(ids);
+        const filtered = allResults.filter((v) =>
+          idSet.has(v.channel?.youtubeChannelId)
+        );
+        setVideos(mergeVideosById(filtered));
+      } else {
+        const batches = await Promise.all(
+          ids.map((id) => listChannelVideos(id, statusFilter))
+        );
+        setVideos(mergeVideosById(batches.flat()));
+      }
+    } catch (e) {
+      setError(e.message || 'Failed to load videos');
+    } finally {
+      setLoading(false);
+    }
+  }, [channels, selectedChannelIds, searchTerm, statusFilter]);
+
+  useEffect(() => {
+    refreshVideos();
+  }, [refreshVideos]);
+
+  const toggleChannelSelection = (youtubeChannelId) => {
     setSelectedChannelIds((prev) => {
       const next = new Set(prev);
-      if (next.has(channelId)) {
-        next.delete(channelId);
-      } else {
-        next.add(channelId);
-      }
+      if (next.has(youtubeChannelId)) next.delete(youtubeChannelId);
+      else next.add(youtubeChannelId);
       return next;
     });
   };
@@ -185,166 +205,127 @@ export default function ChannelMonitor() {
       if (channels.length > 0 && prev.size === channels.length) {
         return new Set();
       }
-      return new Set(channels.map((c) => c.id));
+      return new Set(channels.map((c) => c.youtubeChannelId));
     });
-  };
-
-  const handleCheck = async () => {
-    transcriptFetchSeqRef.current += 1;
-    setCheckErrors([]);
-    setResults([]);
-    setSelectedVideoId(null);
-    setTranscript({ loading: false, text: null, error: null });
-    setSelectedVideoIds(new Set());
-    setBulkDownload({ loading: false, message: '', error: '' });
-    setKeywordFilter('');
-
-    if (channels.length === 0) {
-      setCheckErrors([{ channelId: '', input: '', message: 'Add at least one channel first' }]);
-      setHasChecked(true);
-      return;
-    }
-    if (selectedChannels.length === 0) {
-      setCheckErrors([{ channelId: '', input: '', message: 'Select at least one channel first' }]);
-      setHasChecked(true);
-      return;
-    }
-
-    setCheckBusy(true);
-    try {
-      const payload = selectedChannels.map(({ id, input }) => ({ id, input }));
-      const { videos, errors } = await checkChannelsForNewVideos(
-        payload,
-        sinceDate,
-        minVideoLengthSec
-      );
-      setResults(videos);
-      setCheckErrors(errors);
-    } catch (e) {
-      setCheckErrors([
-        { channelId: '', input: '', message: e.message || 'Check failed' }
-      ]);
-    } finally {
-      setHasChecked(true);
-      setCheckBusy(false);
-    }
-  };
-
-  const loadTranscript = useCallback(async (videoId) => {
-    const seq = ++transcriptFetchSeqRef.current;
-    setSelectedVideoId(videoId);
-    setTranscript({ loading: true, text: null, error: null });
-    try {
-      const text = await getVideoTranscript(videoId);
-      if (seq !== transcriptFetchSeqRef.current) return;
-      setTranscript({ loading: false, text, error: null });
-    } catch (e) {
-      if (seq !== transcriptFetchSeqRef.current) return;
-      setTranscript({
-        loading: false,
-        text: null,
-        error: e.message || 'Failed to load transcript'
-      });
-    }
-  }, []);
-
-  const keywordTokens = useMemo(
-    () =>
-      keywordFilter
-        .split(/[\s,]+/)
-        .map((t) => t.trim())
-        .filter(Boolean)
-        .map((t) => t.toLowerCase()),
-    [keywordFilter]
-  );
-
-  const visibleResults = useMemo(() => {
-    if (keywordTokens.length === 0) {
-      return results;
-    }
-    return results.filter((v) => {
-      const hay = `${v.videoTitle || ''}\n${v.videoDescription || ''}`.toLowerCase();
-      return keywordTokens.some((kw) => hay.includes(kw));
-    });
-  }, [results, keywordTokens]);
-
-  const selectedVisibleCount = useMemo(
-    () => visibleResults.filter((v) => selectedVideoIds.has(v.videoId)).length,
-    [visibleResults, selectedVideoIds]
-  );
-
-  useEffect(() => {
-    if (!selectedVideoId) return;
-    const stillVisible = visibleResults.some((v) => v.videoId === selectedVideoId);
-    if (stillVisible) return;
-    transcriptFetchSeqRef.current += 1;
-    setSelectedVideoId(null);
-    setTranscript({ loading: false, text: null, error: null });
-  }, [visibleResults, selectedVideoId]);
-
-  const handleRowClick = (videoId) => {
-    if (selectedVideoId === videoId && transcript.text) {
-      return;
-    }
-    loadTranscript(videoId);
   };
 
   const toggleVideoSelection = (videoId) => {
     setSelectedVideoIds((prev) => {
       const next = new Set(prev);
-      if (next.has(videoId)) {
-        next.delete(videoId);
+      if (next.has(videoId)) next.delete(videoId);
+      else next.add(videoId);
+      return next;
+    });
+  };
+
+  const selectedVisibleCount = useMemo(
+    () =>
+      visibleVideos.filter((v) => selectedVideoIds.has(v.youtubeVideoId)).length,
+    [visibleVideos, selectedVideoIds]
+  );
+
+  const allVisibleSelected =
+    visibleVideos.length > 0 && selectedVisibleCount === visibleVideos.length;
+
+  const toggleAllVideoSelections = () => {
+    const visibleIds = visibleVideos.map((v) => v.youtubeVideoId);
+    setSelectedVideoIds((prev) => {
+      const everyChecked =
+        visibleIds.length > 0 && visibleIds.every((id) => prev.has(id));
+      const next = new Set(prev);
+      if (everyChecked) {
+        for (const id of visibleIds) next.delete(id);
       } else {
-        next.add(videoId);
+        for (const id of visibleIds) next.add(id);
       }
       return next;
     });
   };
 
-  const allVisibleSelected =
-    visibleResults.length > 0 && selectedVisibleCount === visibleResults.length;
-
-  const toggleAllSelections = () => {
-    const visibleIds = visibleResults.map((v) => v.videoId);
-    setSelectedVideoIds((prev) => {
-      const everyVisibleChecked =
-        visibleIds.length > 0 && visibleIds.every((id) => prev.has(id));
-      const next = new Set(prev);
-      if (everyVisibleChecked) {
-        for (const id of visibleIds) {
-          next.delete(id);
-        }
-      } else {
-        for (const id of visibleIds) {
-          next.add(id);
-        }
+  const handleRemoveChannel = async (youtubeChannelId, titleOrInput) => {
+    setError('');
+    setStatusMessage('');
+    setBulkDownload({ loading: false, message: '', error: '' });
+    try {
+      await removeChannel(youtubeChannelId);
+      setSelectedChannelIds((prev) => {
+        const next = new Set(prev);
+        next.delete(youtubeChannelId);
+        return next;
+      });
+      if (selectedChannelId === youtubeChannelId) {
+        setSelectedChannelId('');
       }
-      return next;
-    });
+      setSelectedVideoId('');
+      setSelectedVideoIds(new Set());
+      await loadChannels();
+      setStatusMessage(`Removed ${titleOrInput || 'channel'} from the library.`);
+    } catch (e) {
+      setError(e.message || 'Failed to remove channel');
+    }
+  };
+
+  const handleAddChannel = async () => {
+    const trimmed = channelInput.trim();
+    if (!trimmed) {
+      setError('Enter a channel URL, @handle, or channel ID');
+      return;
+    }
+    setAddBusy(true);
+    setError('');
+    setStatusMessage('');
+    setBulkDownload({ loading: false, message: '', error: '' });
+    try {
+      const result = await syncChannel(trimmed, 50);
+      await loadChannels();
+      setSelectedChannelId(result.channel.youtubeChannelId);
+      setSelectedChannelIds((prev) => {
+        const next = new Set(prev);
+        next.add(result.channel.youtubeChannelId);
+        return next;
+      });
+      setChannelInput('');
+      setStatusMessage(
+        `Added ${result.syncedVideos} recent video(s) for ${result.channel.title}.`
+      );
+    } catch (e) {
+      setError(e.message || 'Could not add channel');
+    } finally {
+      setAddBusy(false);
+    }
+  };
+
+  const handleDownloadTranscript = async (videoId) => {
+    setDownloadingVideoId(videoId);
+    setError('');
+    setStatusMessage('');
+    setBulkDownload({ loading: false, message: '', error: '' });
+    try {
+      await downloadTranscript(videoId);
+      setStatusMessage('Transcript saved to the local database.');
+      await refreshVideos();
+    } catch (e) {
+      setError(e.message || 'Failed to download transcript');
+    } finally {
+      setDownloadingVideoId('');
+    }
   };
 
   const handleGetTranscripts = async () => {
-    const selectedVideos = visibleResults.filter((v) =>
-      selectedVideoIds.has(v.videoId)
+    const selectedVideos = visibleVideos.filter((v) =>
+      selectedVideoIds.has(v.youtubeVideoId)
     );
     if (selectedVideos.length === 0) {
       setBulkDownload({
         loading: false,
         message: '',
         error:
-          'Select at least one visible video (matching the keyword filter if any).'
+          'Select at least one visible video (matching the filter/search if any).'
       });
       return;
     }
-    if (typeof window.showDirectoryPicker !== 'function') {
-      setBulkDownload({
-        loading: false,
-        message: '',
-        error:
-          'Your browser does not support folder download here. Use a Chromium-based browser (Chrome/Edge) to save to folders.'
-      });
-      return;
-    }
+
+    const canPickFolder = typeof window.showDirectoryPicker === 'function';
 
     setBulkDownload({
       loading: true,
@@ -353,33 +334,57 @@ export default function ChannelMonitor() {
     });
 
     try {
-      const baseDir = await window.showDirectoryPicker({
-        mode: 'readwrite'
-      });
-      let savedCount = 0;
+      let baseDir = null;
+      if (canPickFolder) {
+        baseDir = await window.showDirectoryPicker({ mode: 'readwrite' });
+      }
+
       const folderByChannel = new Map();
+      let savedCount = 0;
 
       for (const video of selectedVideos) {
-        const channelFolderName = sanitizeFilePart(video.channelTitle || 'unknown-channel');
-        let channelFolder = folderByChannel.get(channelFolderName);
-        if (!channelFolder) {
-          channelFolder = await baseDir.getDirectoryHandle(channelFolderName, { create: true });
-          folderByChannel.set(channelFolderName, channelFolder);
+        let text =
+          video.hasTranscript && typeof video.transcriptText === 'string'
+            ? video.transcriptText
+            : null;
+        if (!text) {
+          const data = await downloadTranscript(video.youtubeVideoId);
+          text = data.transcript;
+        }
+        if (typeof text !== 'string' || !text) {
+          throw new Error('Server returned no transcript text');
         }
 
-        const transcriptText = await getVideoTranscript(video.videoId);
-        const fileTitle = sanitizeFilePart(video.videoTitle || video.videoId);
-        const fileName = `${fileTitle}-${video.videoId}.txt`;
-        const fileHandle = await channelFolder.getFileHandle(fileName, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(transcriptText);
-        await writable.close();
-        savedCount += 1;
+        if (baseDir) {
+          const channelFolderName = sanitizeFilePart(
+            video.channel?.title || 'unknown-channel'
+          );
+          let channelFolder = folderByChannel.get(channelFolderName);
+          if (!channelFolder) {
+            channelFolder = await baseDir.getDirectoryHandle(channelFolderName, {
+              create: true
+            });
+            folderByChannel.set(channelFolderName, channelFolder);
+          }
+          const fileTitle = sanitizeFilePart(video.title || video.youtubeVideoId);
+          const fileName = `${fileTitle}-${video.youtubeVideoId}.txt`;
+          const fileHandle = await channelFolder.getFileHandle(fileName, {
+            create: true
+          });
+          const writable = await fileHandle.createWritable();
+          await writable.write(text);
+          await writable.close();
+          savedCount += 1;
+        }
       }
+
+      await refreshVideos();
 
       setBulkDownload({
         loading: false,
-        message: `Saved ${savedCount} transcript(s) into ${folderByChannel.size} channel folder(s).`,
+        message: baseDir
+          ? `Saved ${savedCount} file(s) into ${folderByChannel.size} folder(s); transcripts are also in the database.`
+          : `Saved ${selectedVideos.length} transcript(s) to the database (folder picker not available in this browser).`,
         error: ''
       });
     } catch (e) {
@@ -387,15 +392,23 @@ export default function ChannelMonitor() {
       setBulkDownload({
         loading: false,
         message: '',
-        error: cancelled ? 'Folder selection cancelled.' : e.message || 'Failed to save transcripts.'
+        error: cancelled
+          ? 'Folder selection cancelled.'
+          : e.message || 'Failed to get transcripts.'
       });
     }
   };
 
+  const channelSelectionDisabled = channels.length === 0;
+  const videoPanelDisabled = selectedChannels.length === 0;
+
   return (
     <div className="channel-monitor">
       <p className="channel-monitor-intro">
-        Save channels, pick a date (videos published that day or later, local time), then run Check.
+        Add channels below. Use checkboxes to choose which channels contribute to the
+        video list. Optionally narrow videos by <strong>published date/time</strong>.
+        Bulk <strong>Get Transcripts</strong> saves to the database and, in Chromium
+        browsers, also writes .txt files to a folder you pick.
       </p>
 
       <div className="channel-monitor-toolbar">
@@ -403,58 +416,25 @@ export default function ChannelMonitor() {
           <input
             type="text"
             className="channel-add-input"
-            value={newInput}
-            onChange={(e) => setNewInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !addBusy && handleAdd()}
+            value={channelInput}
+            onChange={(e) => setChannelInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !addBusy && handleAddChannel()}
             placeholder="Channel URL, @handle, or UC…"
             disabled={addBusy}
           />
           <button
             type="button"
             className="search-button channel-add-button"
-            onClick={handleAdd}
+            onClick={handleAddChannel}
             disabled={addBusy}
           >
-            {addBusy ? 'Adding…' : 'Add'}
+            {addBusy ? 'Adding…' : 'Add Channel'}
           </button>
         </div>
-        {addError && <div className="error-message channel-monitor-error">{addError}</div>}
-
-        <div className="channel-check-row">
-          <label className="channel-date-label" htmlFor="since-date">
-            New from (local date)
-          </label>
-          <input
-            id="since-date"
-            type="date"
-            className="channel-date-input"
-            value={sinceDate}
-            onChange={(e) => setSinceDate(e.target.value)}
-          />
-          <label className="channel-date-label" htmlFor="min-len-sec">
-            Min. length (sec)
-          </label>
-          <input
-            id="min-len-sec"
-            type="number"
-            className="channel-date-input channel-min-len-input"
-            min={0}
-            step={1}
-            title="0 = include Shorts. 61 ≈ hide most Shorts."
-            value={minVideoLengthSec}
-            onChange={(e) =>
-              setMinVideoLengthSec(Math.max(0, Number(e.target.value) || 0))
-            }
-          />
-          <button
-            type="button"
-            className="search-button"
-            onClick={handleCheck}
-            disabled={checkBusy || channels.length === 0 || selectedChannels.length === 0}
-          >
-            {checkBusy ? 'Checking…' : 'Check'}
-          </button>
-        </div>
+        {error && <div className="error-message channel-monitor-error">{error}</div>}
+        {statusMessage && (
+          <div className="channel-bulk-success channel-monitor-error">{statusMessage}</div>
+        )}
       </div>
 
       <div className="channel-monitor-columns">
@@ -469,6 +449,7 @@ export default function ChannelMonitor() {
                   type="checkbox"
                   checked={allChannelsSelected}
                   onChange={toggleAllChannelsSelection}
+                  disabled={channelSelectionDisabled}
                 />
                 <span>
                   Select all ({selectedChannels.length}/{channels.length})
@@ -476,23 +457,32 @@ export default function ChannelMonitor() {
               </label>
               <ul className="channel-saved-list">
                 {channels.map((c) => (
-                  <li key={c.id} className="channel-saved-item">
+                  <li key={c.youtubeChannelId} className="channel-saved-item">
                     <label className="channel-saved-checkbox">
                       <input
                         type="checkbox"
-                        checked={selectedChannelIds.has(c.id)}
-                        onChange={() => toggleChannelSelection(c.id)}
+                        checked={selectedChannelIds.has(c.youtubeChannelId)}
+                        onChange={() => toggleChannelSelection(c.youtubeChannelId)}
                       />
                     </label>
-                    <div className="channel-saved-text">
-                      <span className="channel-saved-title">{c.title || c.input}</span>
-                      <span className="channel-saved-meta">{c.input}</span>
-                    </div>
+                    <button
+                      type="button"
+                      className="channel-saved-row-button"
+                      onClick={() => setSelectedChannelId(c.youtubeChannelId)}
+                    >
+                      <span className="channel-saved-title">
+                        {c.title}
+                        {selectedChannelId === c.youtubeChannelId ? ' (focused)' : ''}
+                      </span>
+                      <span className="channel-saved-meta">
+                        Downloaded {c.downloadedCount} / {c.totalCount}
+                      </span>
+                    </button>
                     <button
                       type="button"
                       className="channel-remove-button"
-                      onClick={() => handleRemove(c.id)}
-                      aria-label={`Remove ${c.title || c.input}`}
+                      onClick={() => handleRemoveChannel(c.youtubeChannelId, c.title)}
+                      aria-label={`Remove ${c.title}`}
                     >
                       Remove
                     </button>
@@ -504,155 +494,182 @@ export default function ChannelMonitor() {
         </section>
 
         <section className="channel-results-section">
-          <h2 className="channel-section-title">New videos</h2>
-          {checkErrors.length > 0 && (
-            <ul className="channel-check-errors">
-              {checkErrors.map((err, i) => (
-                <li key={`${err.channelId}-${i}`} className="error-message channel-check-error-item">
-                  {err.input ? (
-                    <>
-                      <strong>{err.input}</strong>: {err.message}
-                    </>
-                  ) : (
-                    err.message
-                  )}
-                </li>
-              ))}
-            </ul>
+          <h2 className="channel-section-title">Videos</h2>
+          {videoPanelDisabled && channels.length > 0 && (
+            <p className="channel-empty">
+              Select at least one channel (checkbox) to load videos.
+            </p>
           )}
-          {!checkBusy &&
-            hasChecked &&
-            results.length === 0 &&
-            channels.length > 0 &&
-            checkErrors.length === 0 && (
-              <p className="channel-empty">
-                No new videos since the selected date
-                {minVideoLengthSec > 0
-                  ? ` (at least ${minVideoLengthSec}s long)`
-                  : ''}
-                .
+          <div className="channel-datetime-filter-row">
+            <label htmlFor="published-from" className="channel-date-label">
+              Published from
+            </label>
+            <input
+              id="published-from"
+              type="datetime-local"
+              className="channel-date-input channel-datetime-input"
+              value={publishedFrom}
+              onChange={(e) => setPublishedFrom(e.target.value)}
+              disabled={videoPanelDisabled}
+            />
+            <label htmlFor="published-to" className="channel-date-label">
+              Published to
+            </label>
+            <input
+              id="published-to"
+              type="datetime-local"
+              className="channel-date-input channel-datetime-input"
+              value={publishedTo}
+              onChange={(e) => setPublishedTo(e.target.value)}
+              disabled={videoPanelDisabled}
+            />
+            <button
+              type="button"
+              className="channel-clear-dates-button"
+              onClick={() => {
+                setPublishedFrom('');
+                setPublishedTo(formatEndOfTodayLocalValue());
+              }}
+              disabled={videoPanelDisabled}
+            >
+              Clear range
+            </button>
+          </div>
+          <div className="channel-results-actions">
+            <label className="channel-select-all">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                onChange={toggleAllVideoSelections}
+                disabled={videoPanelDisabled || visibleVideos.length === 0}
+              />
+              <span>
+                Select all ({selectedVisibleCount}/{visibleVideos.length})
+              </span>
+            </label>
+            <select
+              className="channel-keyword-filter"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              disabled={videoPanelDisabled}
+              aria-label="Filter by transcript status"
+            >
+              <option value="all">All</option>
+              <option value="downloaded">Downloaded</option>
+              <option value="missing">Not downloaded</option>
+            </select>
+            <input
+              type="search"
+              className="channel-keyword-filter"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Keyword filter / search (includes transcript when downloaded)"
+              aria-label="Filter or search videos"
+              disabled={videoPanelDisabled}
+            />
+            <button
+              type="button"
+              className="search-button channel-get-transcripts-button"
+              onClick={handleGetTranscripts}
+              disabled={
+                bulkDownload.loading ||
+                videoPanelDisabled ||
+                selectedVisibleCount === 0
+              }
+            >
+              {bulkDownload.loading ? 'Getting…' : 'Get Transcripts'}
+            </button>
+          </div>
+          {bulkDownload.error && (
+            <p className="error-message channel-bulk-status">{bulkDownload.error}</p>
+          )}
+          {bulkDownload.message && (
+            <p className="channel-bulk-success channel-bulk-status">{bulkDownload.message}</p>
+          )}
+          {!videoPanelDisabled && !loading && videos.length === 0 && (
+            <p className="channel-empty">No videos found for this filter.</p>
+          )}
+          {!videoPanelDisabled &&
+            !loading &&
+            videos.length > 0 &&
+            visibleVideos.length === 0 && (
+              <p className="channel-filter-empty">
+                No videos in this published date/time range ({videos.length} loaded).
               </p>
             )}
-          {!checkBusy && !hasChecked && channels.length > 0 && (
-            <p className="channel-empty">Click Check to load new videos for your saved channels.</p>
-          )}
-          {!checkBusy && channels.length === 0 && (
-            <p className="channel-empty">Add channels to check for new uploads.</p>
-          )}
-          {results.length > 0 && (
-            <>
-              <div className="channel-results-actions">
-                <label className="channel-select-all">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    onChange={toggleAllSelections}
-                  />
-                  <span>
-                    Select all ({selectedVisibleCount}/{visibleResults.length})
-                  </span>
-                </label>
-                <input
-                  type="search"
-                  className="channel-keyword-filter"
-                  value={keywordFilter}
-                  onChange={(e) => setKeywordFilter(e.target.value)}
-                  placeholder="Keyword filter (any word, OR)"
-                  aria-label="Filter videos by keywords in title or description"
-                />
-                <button
-                  type="button"
-                  className="search-button channel-get-transcripts-button"
-                  onClick={handleGetTranscripts}
-                  disabled={bulkDownload.loading || selectedVisibleCount === 0}
-                >
-                  {bulkDownload.loading ? 'Getting…' : 'Get Transcripts'}
-                </button>
-              </div>
-              {results.length > 0 &&
-                visibleResults.length === 0 &&
-                keywordTokens.length > 0 && (
-                  <p className="channel-filter-empty">
-                    No videos match this keyword filter ({results.length} loaded).
-                  </p>
-                )}
-              {bulkDownload.error && (
-                <p className="error-message channel-bulk-status">{bulkDownload.error}</p>
-              )}
-              {bulkDownload.message && (
-                <p className="channel-bulk-success channel-bulk-status">{bulkDownload.message}</p>
-              )}
-              <ul className="channel-results-list">
-              {visibleResults.map((v) => (
-                <li key={v.videoId}>
+          {visibleVideos.length > 0 && (
+            <ul className="channel-results-list">
+              {visibleVideos.map((v) => (
+                <li key={v.youtubeVideoId}>
                   <label className="channel-row-checkbox">
                     <input
                       type="checkbox"
-                      checked={selectedVideoIds.has(v.videoId)}
-                      onChange={() => toggleVideoSelection(v.videoId)}
+                      checked={selectedVideoIds.has(v.youtubeVideoId)}
+                      onChange={() => toggleVideoSelection(v.youtubeVideoId)}
                     />
                     <span>Select</span>
                   </label>
                   <button
                     type="button"
                     className={
-                      selectedVideoId === v.videoId
+                      selectedVideoId === v.youtubeVideoId
                         ? 'channel-result-row channel-result-row-active'
                         : 'channel-result-row'
                     }
-                    onClick={() => handleRowClick(v.videoId)}
+                    onClick={() => setSelectedVideoId(v.youtubeVideoId)}
                   >
-                    <span className="channel-result-channel">{v.channelTitle}</span>
+                    <span className="channel-result-channel">
+                      {v.channel?.title || 'Channel'}
+                    </span>
                     <span className="channel-result-sep"> — </span>
-                    {renderHighlightedText(
-                      v.videoTitle,
-                      keywordTokens,
-                      'channel-result-video'
-                    )}
-                    {!!v.videoDescription && (
-                      renderHighlightedText(
-                        v.videoDescription,
-                        keywordTokens,
-                        'channel-result-description'
-                      )
+                    <span className="channel-result-video">{v.title}</span>
+                    {!!v.description && (
+                      <span className="channel-result-description">{v.description}</span>
                     )}
                     <span className="channel-result-date">
-                      {new Date(v.publishedAt).toLocaleString()}
+                      {new Date(v.publishedAt).toLocaleString()} •{' '}
+                      {v.hasTranscript ? 'Downloaded' : 'Not downloaded'}
+                      {v.matchSource ? ` • Match: ${v.matchSource}` : ''}
                     </span>
                   </button>
                   <a
                     className="channel-result-watch"
-                    href={`https://www.youtube.com/watch?v=${v.videoId}`}
+                    href={`https://www.youtube.com/watch?v=${v.youtubeVideoId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
                   >
                     Open on YouTube
                   </a>
+                  {!v.hasTranscript && (
+                    <button
+                      type="button"
+                      className="search-button channel-download-one-button"
+                      onClick={() => handleDownloadTranscript(v.youtubeVideoId)}
+                      disabled={downloadingVideoId === v.youtubeVideoId}
+                    >
+                      {downloadingVideoId === v.youtubeVideoId
+                        ? 'Downloading…'
+                        : 'Download Transcript'}
+                    </button>
+                  )}
                 </li>
               ))}
-              </ul>
-            </>
+            </ul>
           )}
         </section>
       </div>
 
-      {(selectedVideoId || transcript.loading || transcript.error || transcript.text) && (
+      {selectedVideo && selectedVideo.hasTranscript && selectedVideo.transcriptText && (
         <section className="channel-transcript-section">
           <h2 className="channel-section-title">Transcript</h2>
-          {transcript.loading && <p className="channel-transcript-status">Loading transcript…</p>}
-          {transcript.error && (
-            <p className="error-message channel-transcript-status">{transcript.error}</p>
-          )}
-          {transcript.text && (
-            <div className="channel-transcript-reader">
-              {splitTranscriptParagraphs(transcript.text).map((para, idx) => (
-                <p key={idx} className="channel-transcript-para">
-                  {para}
-                </p>
-              ))}
-            </div>
-          )}
+          <div className="channel-transcript-reader">
+            {splitTranscriptParagraphs(selectedVideo.transcriptText).map((para, idx) => (
+              <p key={idx} className="channel-transcript-para">
+                {para}
+              </p>
+            ))}
+          </div>
         </section>
       )}
     </div>
