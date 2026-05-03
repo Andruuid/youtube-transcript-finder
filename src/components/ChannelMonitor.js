@@ -102,6 +102,13 @@ function formatEndOfTodayLocalValue() {
   return formatDatetimeLocalValue(d);
 }
 
+/** Rolling “last 7 days”: same local clock time, seven calendar days earlier. */
+function formatSevenDaysAgoLocalValue() {
+  const d = new Date();
+  d.setDate(d.getDate() - 7);
+  return formatDatetimeLocalValue(d);
+}
+
 function parseDatetimeLocalToMs(value) {
   if (!value || typeof value !== 'string') return null;
   const ms = new Date(value).getTime();
@@ -133,8 +140,10 @@ export default function ChannelMonitor() {
   const [selectedChannelId, setSelectedChannelId] = useState('');
   const [selectedChannelIds, setSelectedChannelIds] = useState(() => new Set());
   const [videos, setVideos] = useState([]);
-  /** `datetime-local` strings (empty = no bound). `publishedTo` defaults to end of today (local). */
-  const [publishedFrom, setPublishedFrom] = useState('');
+  /** Default range: last 7 days through end of today (local). */
+  const [publishedFrom, setPublishedFrom] = useState(() =>
+    formatSevenDaysAgoLocalValue()
+  );
   const [publishedTo, setPublishedTo] = useState(() => formatEndOfTodayLocalValue());
   const [selectedVideoId, setSelectedVideoId] = useState('');
   const [selectedVideoIds, setSelectedVideoIds] = useState(() => new Set());
@@ -377,6 +386,26 @@ export default function ChannelMonitor() {
     loadChannels();
   }, [loadChannels]);
 
+  /** Load merged video rows for checked channels (no loading UI); used after YouTube sync inside bulk actions. */
+  const fetchMergedVideosSnapshot = useCallback(async () => {
+    const ids = channels
+      .filter((c) => selectedChannelIds.has(c.youtubeChannelId))
+      .map((c) => c.youtubeChannelId);
+    if (!ids.length) return [];
+    if (searchTerm.trim()) {
+      const allResults = await searchLibrary(searchTerm.trim(), '');
+      const idSet = new Set(ids);
+      const filtered = allResults.filter((v) =>
+        idSet.has(v.channel?.youtubeChannelId)
+      );
+      return mergeVideosById(filtered);
+    }
+    const batches = await Promise.all(
+      ids.map((id) => listChannelVideos(id, statusFilter))
+    );
+    return mergeVideosById(batches.flat());
+  }, [channels, selectedChannelIds, searchTerm, statusFilter]);
+
   const refreshVideos = useCallback(async () => {
     const ids = channels
       .filter((c) => selectedChannelIds.has(c.youtubeChannelId))
@@ -388,25 +417,14 @@ export default function ChannelMonitor() {
     setLoading(true);
     setError('');
     try {
-      if (searchTerm.trim()) {
-        const allResults = await searchLibrary(searchTerm.trim(), '');
-        const idSet = new Set(ids);
-        const filtered = allResults.filter((v) =>
-          idSet.has(v.channel?.youtubeChannelId)
-        );
-        setVideos(mergeVideosById(filtered));
-      } else {
-        const batches = await Promise.all(
-          ids.map((id) => listChannelVideos(id, statusFilter))
-        );
-        setVideos(mergeVideosById(batches.flat()));
-      }
+      const merged = await fetchMergedVideosSnapshot();
+      setVideos(merged);
     } catch (e) {
       setError(e.message || 'Failed to load videos');
     } finally {
       setLoading(false);
     }
-  }, [channels, selectedChannelIds, searchTerm, statusFilter]);
+  }, [channels, selectedChannelIds, fetchMergedVideosSnapshot]);
 
   useEffect(() => {
     refreshVideos();
@@ -549,30 +567,62 @@ export default function ChannelMonitor() {
   };
 
   const handleGetTranscripts = async () => {
-    const selectedVideos = visibleVideos.filter((v) =>
+    let selectedVideos = visibleVideos.filter((v) =>
       selectedVideoIds.has(v.youtubeVideoId)
     );
-    if (selectedVideos.length === 0) {
-      setBulkDownload({
-        loading: false,
-        message: '',
-        error:
-          'Select at least one visible video (matching the filter/search if any).',
-        partialFailures: false
-      });
-      return;
-    }
-
-    const canPickFolder = typeof window.showDirectoryPicker === 'function';
 
     setBulkDownload({
       loading: true,
-      message: `Downloading ${selectedVideos.length} transcript(s)…`,
+      message:
+        selectedVideos.length > 0
+          ? `Downloading ${selectedVideos.length} transcript(s)…`
+          : 'Checking for new uploads…',
       error: '',
       partialFailures: false
     });
 
     try {
+      if (selectedVideos.length === 0) {
+        const channelIds = channels
+          .filter((c) => selectedChannelIds.has(c.youtubeChannelId))
+          .map((c) => c.youtubeChannelId);
+        setBulkDownload({
+          loading: true,
+          message: 'Syncing newest uploads from YouTube…',
+          error: '',
+          partialFailures: false
+        });
+        for (const cid of channelIds) {
+          await syncChannel(cid, 50, '');
+        }
+        const merged = await fetchMergedVideosSnapshot();
+        setVideos(merged);
+        const visible = filterVideosByPublishedRange(
+          merged,
+          publishedFrom,
+          publishedTo
+        );
+        selectedVideos = visible.filter((v) => !v.hasTranscript);
+        if (selectedVideos.length === 0) {
+          setBulkDownload({
+            loading: false,
+            message:
+              'No transcripts missing in the current view (after syncing newest uploads). Select specific videos if you want to export existing transcripts to files.',
+            error: '',
+            partialFailures: false
+          });
+          return;
+        }
+        setBulkDownload({
+          loading: true,
+          message: `Downloading ${selectedVideos.length} transcript(s)…`,
+          error: '',
+          partialFailures: false
+        });
+      }
+
+      const canPickFolder = typeof window.showDirectoryPicker === 'function';
+
       let baseDir = null;
       if (canPickFolder) {
         baseDir = await window.showDirectoryPicker({ mode: 'readwrite' });
@@ -666,14 +716,24 @@ export default function ChannelMonitor() {
   const channelSelectionDisabled = channels.length === 0;
   const videoPanelDisabled = selectedChannels.length === 0;
 
+  const canBulkGetTranscripts = useMemo(() => {
+    if (visibleVideos.length === 0) return false;
+    if (selectedVisibleCount > 0) return true;
+    return visibleVideos.some((v) => !v.hasTranscript);
+  }, [visibleVideos, selectedVisibleCount]);
+
   return (
     <div className="channel-monitor">
       <p className="channel-monitor-intro">
         Add channels below. Use checkboxes to choose which channels contribute to the
         video list. Optionally narrow videos by <strong>published date/time</strong>.
         Bulk <strong>Get Transcripts</strong> saves to the database and, in Chromium
-        browsers, also writes .txt files to a folder you pick. Click a row marked{' '}
-        <strong>Downloaded</strong> to open the transcript in a reader with keyword search.
+        browsers, also writes .txt files to a folder you pick. With{' '}
+        <strong>no video rows checked</strong>, it syncs the latest uploads from YouTube,
+        then downloads transcripts for every visible video that does not have one yet.
+        Check specific rows to fetch or export only those (including re-export to disk).
+        Click a row marked <strong>Downloaded</strong> to open the transcript in a reader
+        with keyword search.
       </p>
 
       <div className="channel-monitor-toolbar">
@@ -792,7 +852,7 @@ export default function ChannelMonitor() {
               type="button"
               className="channel-clear-dates-button"
               onClick={() => {
-                setPublishedFrom('');
+                setPublishedFrom(formatSevenDaysAgoLocalValue());
                 setPublishedTo(formatEndOfTodayLocalValue());
               }}
               disabled={videoPanelDisabled}
@@ -840,7 +900,7 @@ export default function ChannelMonitor() {
                 bulkDownload.loading ||
                 smartBulkBusy ||
                 videoPanelDisabled ||
-                selectedVisibleCount === 0
+                !canBulkGetTranscripts
               }
             >
               {bulkDownload.loading ? 'Getting…' : 'Get Transcripts'}
