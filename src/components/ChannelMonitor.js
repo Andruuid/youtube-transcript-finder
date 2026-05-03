@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import './ChannelMonitor.css';
 import {
   downloadTranscript,
@@ -7,6 +8,7 @@ import {
   listChannelVideos,
   removeChannel,
   searchLibrary,
+  summarizeTranscript,
   syncChannel
 } from '../services/libraryService';
 
@@ -150,6 +152,17 @@ export default function ChannelMonitor() {
   const [transcriptModalSearch, setTranscriptModalSearch] = useState('');
   const [transcriptModalHitIndex, setTranscriptModalHitIndex] = useState(0);
   const transcriptModalBodyRef = useRef(null);
+  /** Cached short/long summaries in the modal (from DB or fresh API). */
+  const [modalSummaries, setModalSummaries] = useState({
+    short: { text: '', model: '' },
+    long: { text: '', model: '' }
+  });
+  /** Which summary block is shown: short, long, or none yet */
+  const [displayedSummaryTab, setDisplayedSummaryTab] = useState(null);
+  const [transcriptSummarizeBusy, setTranscriptSummarizeBusy] = useState(false);
+  const [transcriptSummarizeError, setTranscriptSummarizeError] = useState('');
+  /** Request in flight for short vs long (button labels). */
+  const [transcriptSummarizeVariant, setTranscriptSummarizeVariant] = useState(null);
 
   const selectedChannels = useMemo(
     () => channels.filter((c) => selectedChannelIds.has(c.youtubeChannelId)),
@@ -171,6 +184,11 @@ export default function ChannelMonitor() {
     setTranscriptModalError('');
     setTranscriptModalSearch('');
     setTranscriptModalHitIndex(0);
+    setModalSummaries({ short: { text: '', model: '' }, long: { text: '', model: '' } });
+    setDisplayedSummaryTab(null);
+    setTranscriptSummarizeBusy(false);
+    setTranscriptSummarizeError('');
+    setTranscriptSummarizeVariant(null);
   }, []);
 
   const openTranscriptModal = useCallback(async (v) => {
@@ -179,6 +197,14 @@ export default function ChannelMonitor() {
     setTranscriptModalError('');
     setTranscriptModalSearch('');
     setTranscriptModalHitIndex(0);
+    setModalSummaries({
+      short: { text: v.sumShort || '', model: v.sumShortModel || '' },
+      long: { text: v.sumLong || '', model: v.sumLongModel || '' }
+    });
+    setDisplayedSummaryTab(v.sumShort ? 'short' : v.sumLong ? 'long' : null);
+    setTranscriptSummarizeBusy(false);
+    setTranscriptSummarizeError('');
+    setTranscriptSummarizeVariant(null);
     const cached =
       typeof v.transcriptText === 'string' && v.transcriptText.length > 0;
     if (cached) {
@@ -197,6 +223,58 @@ export default function ChannelMonitor() {
       setTranscriptModalLoading(false);
     }
   }, []);
+
+  const runTranscriptSummarize = useCallback(
+    async (variant) => {
+      const text = transcriptModalText.trim();
+      if (!text || transcriptModalLoading || transcriptModalError || !transcriptModalVideo) return;
+      const videoId = transcriptModalVideo.youtubeVideoId;
+      setTranscriptSummarizeBusy(true);
+      setTranscriptSummarizeError('');
+      setTranscriptSummarizeVariant(variant);
+      setDisplayedSummaryTab(variant);
+      setModalSummaries((prev) => ({
+        ...prev,
+        short: variant === 'short' ? { text: '', model: '' } : prev.short,
+        long: variant === 'long' ? { text: '', model: '' } : prev.long
+      }));
+      try {
+        const { summary, model } = await summarizeTranscript(text, variant, videoId);
+        setModalSummaries((prev) => ({
+          ...prev,
+          short: variant === 'short' ? { text: summary, model } : prev.short,
+          long: variant === 'long' ? { text: summary, model } : prev.long
+        }));
+        const patch =
+          variant === 'short'
+            ? { sumShort: summary, sumShortModel: model }
+            : { sumLong: summary, sumLongModel: model };
+        setTranscriptModalVideo((pv) => (pv ? { ...pv, ...patch } : pv));
+        setVideos((list) =>
+          list.map((x) => (x.youtubeVideoId === videoId ? { ...x, ...patch } : x))
+        );
+      } catch (e) {
+        setTranscriptSummarizeError(e.message || 'Summarization failed');
+        setModalSummaries({
+          short: {
+            text: transcriptModalVideo.sumShort || '',
+            model: transcriptModalVideo.sumShortModel || ''
+          },
+          long: {
+            text: transcriptModalVideo.sumLong || '',
+            model: transcriptModalVideo.sumLongModel || ''
+          }
+        });
+        setDisplayedSummaryTab(
+          transcriptModalVideo.sumShort ? 'short' : transcriptModalVideo.sumLong ? 'long' : null
+        );
+        setTranscriptSummarizeVariant(null);
+      } finally {
+        setTranscriptSummarizeBusy(false);
+      }
+    },
+    [transcriptModalText, transcriptModalLoading, transcriptModalError, transcriptModalVideo]
+  );
 
   const transcriptHighlightModel = useMemo(
     () => buildTranscriptHighlightModel(transcriptModalText, transcriptModalSearch),
@@ -921,27 +999,130 @@ export default function ChannelMonitor() {
                 )}
               {!transcriptModalLoading &&
                 !transcriptModalError &&
-                !!transcriptModalText.trim() &&
-                transcriptHighlightModel.paragraphs.map((parts, pi) => (
-                  <p key={pi} className="channel-transcript-modal-para">
-                    {parts.map((part, si) =>
-                      part.type === 'mark' ? (
-                        <mark
-                          key={si}
-                          className={
-                            part.hitIndex === transcriptModalHitIndex
-                              ? 'channel-transcript-hit channel-transcript-hit-active'
-                              : 'channel-transcript-hit'
-                          }
+                !!transcriptModalText.trim() && (
+                  <>
+                    <section className="channel-transcript-summary-panel" aria-label="Summary">
+                      <div className="channel-transcript-summary-actions">
+                        <button
+                          type="button"
+                          className="search-button channel-transcript-summarize-button"
+                          onClick={() => void runTranscriptSummarize('short')}
+                          disabled={transcriptSummarizeBusy}
                         >
-                          {part.value}
-                        </mark>
-                      ) : (
-                        <span key={si}>{part.value}</span>
-                      )
-                    )}
-                  </p>
-                ))}
+                          {transcriptSummarizeBusy && transcriptSummarizeVariant === 'short'
+                            ? 'Summarizing…'
+                            : 'Summarize Short'}
+                        </button>
+                        <button
+                          type="button"
+                          className="search-button channel-transcript-summarize-button"
+                          onClick={() => void runTranscriptSummarize('long')}
+                          disabled={transcriptSummarizeBusy}
+                        >
+                          {transcriptSummarizeBusy && transcriptSummarizeVariant === 'long'
+                            ? 'Summarizing…'
+                            : 'Summarize Long'}
+                        </button>
+                      </div>
+                      {modalSummaries.short.text.trim() &&
+                        modalSummaries.long.text.trim() &&
+                        !transcriptSummarizeBusy && (
+                          <div
+                            className="channel-transcript-summary-view-tabs"
+                            role="tablist"
+                            aria-label="Stored summaries"
+                          >
+                            <button
+                              type="button"
+                              role="tab"
+                              aria-selected={displayedSummaryTab === 'short'}
+                              className={
+                                displayedSummaryTab === 'short'
+                                  ? 'channel-transcript-summary-tab is-active'
+                                  : 'channel-transcript-summary-tab'
+                              }
+                              onClick={() => setDisplayedSummaryTab('short')}
+                            >
+                              View short
+                            </button>
+                            <button
+                              type="button"
+                              role="tab"
+                              aria-selected={displayedSummaryTab === 'long'}
+                              className={
+                                displayedSummaryTab === 'long'
+                                  ? 'channel-transcript-summary-tab is-active'
+                                  : 'channel-transcript-summary-tab'
+                              }
+                              onClick={() => setDisplayedSummaryTab('long')}
+                            >
+                              View long
+                            </button>
+                          </div>
+                        )}
+                      {!!transcriptSummarizeError && (
+                        <p className="error-message channel-transcript-summary-status">{transcriptSummarizeError}</p>
+                      )}
+                      {displayedSummaryTab &&
+                        (() => {
+                          const payload =
+                            displayedSummaryTab === 'short'
+                              ? modalSummaries.short
+                              : modalSummaries.long;
+                          const busyThis =
+                            transcriptSummarizeBusy &&
+                            transcriptSummarizeVariant === displayedSummaryTab;
+                          const hasText = !!payload.text.trim();
+                          if (!hasText && !busyThis) return null;
+                          return (
+                            <div className="channel-transcript-summary-output">
+                              {payload.model && !busyThis && (
+                                <p className="channel-transcript-summary-model">
+                                  Model:{' '}
+                                  <span className="channel-transcript-summary-model-slug">
+                                    {payload.model}
+                                  </span>
+                                </p>
+                              )}
+                              <h3 className="channel-transcript-summary-heading">
+                                Summary ({displayedSummaryTab === 'short' ? 'Short' : 'Long'})
+                              </h3>
+                              {busyThis ? (
+                                <p className="channel-transcript-modal-status">Summarizing…</p>
+                              ) : (
+                                <div className="channel-transcript-summary-markdown">
+                                  <ReactMarkdown>{payload.text}</ReactMarkdown>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                    </section>
+
+                    <h3 className="channel-transcript-full-heading">Full transcript</h3>
+
+                    {transcriptHighlightModel.paragraphs.map((parts, pi) => (
+                      <p key={pi} className="channel-transcript-modal-para">
+                        {parts.map((part, si) =>
+                          part.type === 'mark' ? (
+                            <mark
+                              key={si}
+                              className={
+                                part.hitIndex === transcriptModalHitIndex
+                                  ? 'channel-transcript-hit channel-transcript-hit-active'
+                                  : 'channel-transcript-hit'
+                              }
+                            >
+                              {part.value}
+                            </mark>
+                          ) : (
+                            <span key={si}>{part.value}</span>
+                          )
+                        )}
+                      </p>
+                    ))}
+                  </>
+                )}
             </div>
           </div>
         </div>

@@ -11,13 +11,15 @@ import {
   fetchTranscriptText
 } from './src/services/transcriptService.js';
 import { searchLibrary } from './src/services/librarySearchService.js';
+import { summarizeTranscriptViaOpenRouter } from './src/services/transcriptSummarizeService.js';
 
 const PORT = Number(
   process.env.TRANSCRIPT_SERVER_PORT || process.env.PORT || 5001
 );
 const app = express();
 
-app.use(express.json({ limit: '64kb' }));
+/** Large transcripts are POSTed to /api/summarize-transcript; keep one generous limit. */
+app.use(express.json({ limit: '5mb' }));
 registerAudioDownload(app);
 if (!String(process.env.YOUTUBE_API_KEY || '').trim()) {
   console.warn('[startup] Missing YOUTUBE_API_KEY; channel sync endpoints will fail until set.');
@@ -247,6 +249,46 @@ app.post('/api/videos/:youtubeVideoId/download-transcript', async (req, res) => 
     });
   } catch (error) {
     const message = error?.message || String(error);
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/summarize-transcript', async (req, res) => {
+  const transcript = String(req.body?.transcript ?? '');
+  const youtubeVideoId = String(req.body?.youtubeVideoId ?? '').trim();
+  const modeRaw = String(req.body?.mode || '').toLowerCase();
+  const mode = modeRaw === 'long' ? 'long' : modeRaw === 'short' ? 'short' : '';
+
+  if (!mode) {
+    return res.status(400).json({ error: 'mode must be "short" or "long"' });
+  }
+
+  try {
+    const { summary, model } = await summarizeTranscriptViaOpenRouter({ transcript, mode });
+
+    if (youtubeVideoId) {
+      try {
+        assertVideoId(youtubeVideoId);
+        const data =
+          mode === 'short'
+            ? { sumShort: summary, sumShortModel: model }
+            : { sumLong: summary, sumLongModel: model };
+        const updated = await prisma.video.updateMany({
+          where: { youtubeVideoId },
+          data
+        });
+        if (updated.count === 0) {
+          console.warn('[summarize-transcript] no Video row for youtubeVideoId', youtubeVideoId);
+        }
+      } catch (persistErr) {
+        console.error('[summarize-transcript] failed to persist summary', persistErr);
+      }
+    }
+
+    return res.json({ summary, model });
+  } catch (error) {
+    const message = error?.message || String(error);
+    console.error('[summarize-transcript] failed', { mode, message, stack: error?.stack });
     return res.status(500).json({ error: message });
   }
 });

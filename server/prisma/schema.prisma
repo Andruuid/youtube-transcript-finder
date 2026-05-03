@@ -31,6 +31,12 @@ model Video {
   hasTranscript     Boolean  @default(false)
   transcriptText    String?
   transcriptFetchedAt DateTime?
+  /** OpenRouter short summary text */
+  sumShort          String?
+  sumShortModel     String?
+  /** OpenRouter long summary text */
+  sumLong           String?
+  sumLongModel      String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   channel           Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)

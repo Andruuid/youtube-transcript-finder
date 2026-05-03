@@ -66,3 +66,24 @@ export async function fetchTranscriptText(videoId) {
     source: data.source || ''
   };
 }
+
+/**
+ * Summarizes transcript via OpenRouter (server holds API key and prompts).
+ * Pass youtubeVideoId so the server can persist summary + model on the Video row.
+ */
+export async function summarizeTranscript(transcript, mode, youtubeVideoId = '') {
+  const res = await fetch('/api/summarize-transcript', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      transcript,
+      mode,
+      ...(youtubeVideoId ? { youtubeVideoId } : {})
+    })
+  });
+  const data = await parseJsonResponse(res, 'Summarization failed');
+  return {
+    summary: typeof data.summary === 'string' ? data.summary : '',
+    model: typeof data.model === 'string' ? data.model : ''
+  };
+}

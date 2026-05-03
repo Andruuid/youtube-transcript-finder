@@ -576,6 +576,140 @@
   cursor: not-allowed;
 }
 
+.channel-transcript-summary-panel {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid #e8eaed;
+}
+
+.channel-transcript-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.channel-transcript-summarize-button {
+  flex: 0 0 auto;
+}
+
+.channel-transcript-summary-status {
+  margin: 0 0 0.75rem;
+}
+
+.channel-transcript-summary-output {
+  margin-top: 0.75rem;
+}
+
+.channel-transcript-summary-model {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  color: #5f6368;
+  line-height: 1.4;
+}
+
+.channel-transcript-summary-model-slug {
+  font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', monospace;
+  font-size: 0.8rem;
+  color: #202124;
+  word-break: break-all;
+}
+
+.channel-transcript-summary-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.65rem;
+}
+
+.channel-transcript-summary-tab {
+  padding: 0.28rem 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #1a73e8;
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.channel-transcript-summary-tab:hover {
+  background: #f8f9fa;
+}
+
+.channel-transcript-summary-tab.is-active {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+}
+
+.channel-transcript-summary-heading {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #202124;
+}
+
+.channel-transcript-summary-markdown {
+  padding: 1rem 1.1rem;
+  background: #fff;
+  border: 1px solid #e8eaed;
+  border-radius: 8px;
+  font-size: 0.98rem;
+  line-height: 1.65;
+  color: #202124;
+}
+
+.channel-transcript-summary-markdown :first-child {
+  margin-top: 0;
+}
+
+.channel-transcript-summary-markdown :last-child {
+  margin-bottom: 0;
+}
+
+.channel-transcript-summary-markdown p {
+  margin: 0.6rem 0;
+}
+
+.channel-transcript-summary-markdown ul,
+.channel-transcript-summary-markdown ol {
+  margin: 0.5rem 0;
+  padding-left: 1.35rem;
+}
+
+.channel-transcript-summary-markdown li {
+  margin: 0.25rem 0;
+}
+
+.channel-transcript-summary-markdown h1,
+.channel-transcript-summary-markdown h2,
+.channel-transcript-summary-markdown h3,
+.channel-transcript-summary-markdown h4 {
+  margin: 0.85rem 0 0.45rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.channel-transcript-summary-markdown h1:first-child,
+.channel-transcript-summary-markdown h2:first-child,
+.channel-transcript-summary-markdown h3:first-child {
+  margin-top: 0;
+}
+
+.channel-transcript-summary-markdown code {
+  font-size: 0.9em;
+  padding: 0.1em 0.35em;
+  background: #f1f3f4;
+  border-radius: 4px;
+}
+
+.channel-transcript-full-heading {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #5f6368;
+}
+
 .channel-transcript-modal-body {
   flex: 1;
   overflow-y: auto;
