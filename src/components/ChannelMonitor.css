@@ -114,6 +114,20 @@
   padding: 0;
 }
 
+.channel-saved-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #444;
+  font-weight: 500;
+  margin: 0 0 0.45rem;
+}
+
+.channel-saved-select-all input {
+  width: 1rem;
+  height: 1rem;
+}
+
 .channel-saved-item {
   display: flex;
   align-items: flex-start;
@@ -133,6 +147,15 @@
   gap: 0.2rem;
   min-width: 0;
   text-align: left;
+}
+
+.channel-saved-checkbox {
+  margin-top: 0.15rem;
+}
+
+.channel-saved-checkbox input {
+  width: 1rem;
+  height: 1rem;
 }
 
 .channel-saved-title {
@@ -178,7 +201,7 @@
   flex-wrap: wrap;
   gap: 0.75rem 1rem;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   margin-bottom: 0.9rem;
 }
 
@@ -195,8 +218,30 @@
   height: 1rem;
 }
 
+.channel-keyword-filter {
+  flex: 1 1 200px;
+  min-width: 160px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.95rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.channel-keyword-filter:focus {
+  border-color: #1a73e8;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+}
+
+.channel-filter-empty {
+  margin: 0 0 0.75rem;
+  color: #666;
+  font-size: 0.95rem;
+}
+
 .channel-get-transcripts-button {
   min-width: 10.5rem;
+  margin-left: auto;
 }
 
 .channel-bulk-status {
@@ -272,6 +317,28 @@
 .channel-result-video {
   color: #333;
   font-weight: 500;
+}
+
+.channel-result-description {
+  display: -webkit-box;
+  margin-top: 0.35rem;
+  color: #5f6368;
+  font-size: 0.86rem;
+  font-weight: 400;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 10;
+  line-clamp: 10;
+}
+
+.channel-hit-mark {
+  background: #fff176;
+  color: inherit;
+  padding: 0 0.08em;
+  border-radius: 2px;
 }
 
 .channel-result-date {

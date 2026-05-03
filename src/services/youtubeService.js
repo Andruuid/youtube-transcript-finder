@@ -395,27 +395,37 @@ export function iso8601DurationToSeconds(iso) {
 }
 
 /**
- * Filter upload rows by minimum duration (uses videos.list batches).
+ * Batch videos.list: attach snippet.description and optionally filter by duration.
+ * One pass regardless of minDurationSeconds (saves quota vs separate calls).
  * @param {Array<{ videoId: string }>} rows
  * @param {number} minSeconds
- * @returns {Promise<Array>}
+ * @returns {Promise<Array<{ videoDescription: string } & typeof rows[0]>>}
  */
-async function filterUploadsByMinDuration(rows, minSeconds) {
-  if (!rows.length || minSeconds <= 0) {
+async function hydrateUploadRowsFromVideosApi(rows, minSeconds) {
+  if (!rows.length) {
     return rows;
   }
   const ids = [...new Set(rows.map((r) => r.videoId))];
-  const durationById = new Map();
+  const metaById = new Map();
   for (const batch of chunkArray(ids, 50)) {
     const data = await getVideoDetails(batch.join(','));
     for (const v of data.items || []) {
-      durationById.set(
-        v.id,
-        iso8601DurationToSeconds(v.contentDetails?.duration)
-      );
+      metaById.set(v.id, {
+        durationSec: iso8601DurationToSeconds(v.contentDetails?.duration),
+        description: v.snippet?.description ?? ''
+      });
     }
   }
-  return rows.filter((r) => (durationById.get(r.videoId) ?? 0) >= minSeconds);
+  const withDesc = rows.map((r) => ({
+    ...r,
+    videoDescription: metaById.get(r.videoId)?.description ?? ''
+  }));
+  if (minSeconds <= 0) {
+    return withDesc;
+  }
+  return withDesc.filter(
+    (r) => (metaById.get(r.videoId)?.durationSec ?? 0) >= minSeconds
+  );
 }
 
 /**
@@ -474,11 +484,11 @@ export const checkChannelsForNewVideos = async (
     }
   }
   videos.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
-  const filtered =
-    minDurationSeconds > 0
-      ? await filterUploadsByMinDuration(videos, minDurationSeconds)
-      : videos;
-  return { videos: filtered, errors };
+  const hydrated = await hydrateUploadRowsFromVideosApi(
+    videos,
+    minDurationSeconds
+  );
+  return { videos: hydrated, errors };
 };
 
 /**
