@@ -56,3 +56,13 @@ export async function searchLibrary(query, channelId = '') {
   const data = await parseJsonResponse(res, 'Failed to search library');
   return data.items || [];
 }
+
+/** Loads transcript text (prefers DB when already downloaded). */
+export async function fetchTranscriptText(videoId) {
+  const res = await fetch(`/transcript/${encodeURIComponent(videoId)}`);
+  const data = await parseJsonResponse(res, 'Failed to load transcript');
+  return {
+    transcript: typeof data.transcript === 'string' ? data.transcript : '',
+    source: data.source || ''
+  };
+}

@@ -231,6 +231,14 @@ app.post('/api/videos/:youtubeVideoId/download-transcript', async (req, res) => 
     if (!existing) {
       return res.status(404).json({ error: 'Video not found in library; sync channel first.' });
     }
+    if (existing.hasTranscript && existing.transcriptText) {
+      return res.json({
+        videoId,
+        transcript: existing.transcriptText,
+        transcriptFetchedAt: existing.transcriptFetchedAt,
+        source: 'database'
+      });
+    }
     const payload = await fetchAndPersistTranscript(videoId);
     return res.json({
       videoId,

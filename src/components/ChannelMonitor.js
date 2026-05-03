@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './ChannelMonitor.css';
 import {
   downloadTranscript,
+  fetchTranscriptText,
   listChannels,
   listChannelVideos,
   removeChannel,
@@ -27,6 +28,47 @@ function splitTranscriptParagraphs(text) {
     .split(/\n\s*\n/)
     .map((p) => p.trim())
     .filter(Boolean);
+}
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Split one paragraph into alternating plain / highlight segments for keyword search. */
+function paragraphToSearchParts(para, query) {
+  const q = query.trim();
+  if (!q) return [{ type: 'text', value: para }];
+  const re = new RegExp(escapeRegExp(q), 'gi');
+  const parts = [];
+  let last = 0;
+  let m = re.exec(para);
+  while (m !== null) {
+    if (m.index > last) {
+      parts.push({ type: 'text', value: para.slice(last, m.index) });
+    }
+    parts.push({ type: 'mark', value: m[0] });
+    last = m.index + m[0].length;
+    if (m[0].length === 0) re.lastIndex++;
+    m = re.exec(para);
+  }
+  if (last < para.length) {
+    parts.push({ type: 'text', value: para.slice(last) });
+  }
+  return parts.length ? parts : [{ type: 'text', value: para }];
+}
+
+function buildTranscriptHighlightModel(text, query) {
+  const paras = splitTranscriptParagraphs(text || '');
+  let hitCount = 0;
+  const paragraphs = paras.map((para) =>
+    paragraphToSearchParts(para, query).map((part) => {
+      if (part.type !== 'mark') return part;
+      const idx = hitCount;
+      hitCount += 1;
+      return { ...part, hitIndex: idx };
+    })
+  );
+  return { paragraphs, hitCount };
 }
 
 function mergeVideosById(items) {
@@ -101,6 +143,14 @@ export default function ChannelMonitor() {
     error: ''
   });
 
+  const [transcriptModalVideo, setTranscriptModalVideo] = useState(null);
+  const [transcriptModalText, setTranscriptModalText] = useState('');
+  const [transcriptModalLoading, setTranscriptModalLoading] = useState(false);
+  const [transcriptModalError, setTranscriptModalError] = useState('');
+  const [transcriptModalSearch, setTranscriptModalSearch] = useState('');
+  const [transcriptModalHitIndex, setTranscriptModalHitIndex] = useState(0);
+  const transcriptModalBodyRef = useRef(null);
+
   const selectedChannels = useMemo(
     () => channels.filter((c) => selectedChannelIds.has(c.youtubeChannelId)),
     [channels, selectedChannelIds]
@@ -109,21 +159,106 @@ export default function ChannelMonitor() {
   const allChannelsSelected =
     channels.length > 0 && selectedChannels.length === channels.length;
 
-  const selectedVideo = useMemo(
-    () => videos.find((v) => v.youtubeVideoId === selectedVideoId) || null,
-    [videos, selectedVideoId]
-  );
-
   const visibleVideos = useMemo(
     () => filterVideosByPublishedRange(videos, publishedFrom, publishedTo),
     [videos, publishedFrom, publishedTo]
   );
 
+  const closeTranscriptModal = useCallback(() => {
+    setTranscriptModalVideo(null);
+    setTranscriptModalText('');
+    setTranscriptModalLoading(false);
+    setTranscriptModalError('');
+    setTranscriptModalSearch('');
+    setTranscriptModalHitIndex(0);
+  }, []);
+
+  const openTranscriptModal = useCallback(async (v) => {
+    setSelectedVideoId(v.youtubeVideoId);
+    setTranscriptModalVideo(v);
+    setTranscriptModalError('');
+    setTranscriptModalSearch('');
+    setTranscriptModalHitIndex(0);
+    const cached =
+      typeof v.transcriptText === 'string' && v.transcriptText.length > 0;
+    if (cached) {
+      setTranscriptModalText(v.transcriptText);
+      setTranscriptModalLoading(false);
+      return;
+    }
+    setTranscriptModalText('');
+    setTranscriptModalLoading(true);
+    try {
+      const { transcript } = await fetchTranscriptText(v.youtubeVideoId);
+      setTranscriptModalText(transcript);
+    } catch (e) {
+      setTranscriptModalError(e.message || 'Could not load transcript');
+    } finally {
+      setTranscriptModalLoading(false);
+    }
+  }, []);
+
+  const transcriptHighlightModel = useMemo(
+    () => buildTranscriptHighlightModel(transcriptModalText, transcriptModalSearch),
+    [transcriptModalText, transcriptModalSearch]
+  );
+
+  useEffect(() => {
+    setTranscriptModalHitIndex(0);
+  }, [transcriptModalSearch]);
+
+  useEffect(() => {
+    if (!transcriptModalVideo || !transcriptModalSearch.trim()) return;
+    const root = transcriptModalBodyRef.current;
+    if (!root) return;
+    const active = root.querySelector('.channel-transcript-hit-active');
+    active?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [
+    transcriptModalHitIndex,
+    transcriptModalSearch,
+    transcriptModalVideo,
+    transcriptHighlightModel.hitCount,
+    transcriptModalText
+  ]);
+
+  useEffect(() => {
+    if (!transcriptModalVideo) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [transcriptModalVideo]);
+
+  useEffect(() => {
+    if (!transcriptModalVideo) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') closeTranscriptModal();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [transcriptModalVideo, closeTranscriptModal]);
+
   useEffect(() => {
     if (!selectedVideoId) return;
     const stillVisible = visibleVideos.some((v) => v.youtubeVideoId === selectedVideoId);
-    if (!stillVisible) setSelectedVideoId('');
-  }, [visibleVideos, selectedVideoId]);
+    if (!stillVisible) {
+      setSelectedVideoId('');
+      closeTranscriptModal();
+    }
+  }, [visibleVideos, selectedVideoId, closeTranscriptModal]);
+
+  const goPrevTranscriptHit = () => {
+    const n = transcriptHighlightModel.hitCount;
+    if (n <= 0) return;
+    setTranscriptModalHitIndex((i) => (i - 1 + n) % n);
+  };
+
+  const goNextTranscriptHit = () => {
+    const n = transcriptHighlightModel.hitCount;
+    if (n <= 0) return;
+    setTranscriptModalHitIndex((i) => (i + 1) % n);
+  };
 
   const loadChannels = useCallback(async () => {
     setLoading(true);
@@ -258,6 +393,7 @@ export default function ChannelMonitor() {
       }
       setSelectedVideoId('');
       setSelectedVideoIds(new Set());
+      closeTranscriptModal();
       await loadChannels();
       setStatusMessage(`Removed ${titleOrInput || 'channel'} from the library.`);
     } catch (e) {
@@ -344,10 +480,15 @@ export default function ChannelMonitor() {
 
       for (const video of selectedVideos) {
         let text =
-          video.hasTranscript && typeof video.transcriptText === 'string'
+          video.hasTranscript &&
+          typeof video.transcriptText === 'string' &&
+          video.transcriptText.length > 0
             ? video.transcriptText
             : null;
-        if (!text) {
+        if (!text && video.hasTranscript) {
+          const { transcript } = await fetchTranscriptText(video.youtubeVideoId);
+          text = transcript;
+        } else if (!text) {
           const data = await downloadTranscript(video.youtubeVideoId);
           text = data.transcript;
         }
@@ -408,7 +549,8 @@ export default function ChannelMonitor() {
         Add channels below. Use checkboxes to choose which channels contribute to the
         video list. Optionally narrow videos by <strong>published date/time</strong>.
         Bulk <strong>Get Transcripts</strong> saves to the database and, in Chromium
-        browsers, also writes .txt files to a folder you pick.
+        browsers, also writes .txt files to a folder you pick. Click a row marked{' '}
+        <strong>Downloaded</strong> to open the transcript in a reader with keyword search.
       </p>
 
       <div className="channel-monitor-toolbar">
@@ -616,7 +758,14 @@ export default function ChannelMonitor() {
                         ? 'channel-result-row channel-result-row-active'
                         : 'channel-result-row'
                     }
-                    onClick={() => setSelectedVideoId(v.youtubeVideoId)}
+                    onClick={() => {
+                      if (v.hasTranscript) {
+                        void openTranscriptModal(v);
+                      } else {
+                        setSelectedVideoId(v.youtubeVideoId);
+                        closeTranscriptModal();
+                      }
+                    }}
                   >
                     <span className="channel-result-channel">
                       {v.channel?.title || 'Channel'}
@@ -660,17 +809,142 @@ export default function ChannelMonitor() {
         </section>
       </div>
 
-      {selectedVideo && selectedVideo.hasTranscript && selectedVideo.transcriptText && (
-        <section className="channel-transcript-section">
-          <h2 className="channel-section-title">Transcript</h2>
-          <div className="channel-transcript-reader">
-            {splitTranscriptParagraphs(selectedVideo.transcriptText).map((para, idx) => (
-              <p key={idx} className="channel-transcript-para">
-                {para}
-              </p>
-            ))}
+      {transcriptModalVideo && (
+        <div
+          className="channel-transcript-modal-backdrop"
+          role="presentation"
+          onClick={closeTranscriptModal}
+        >
+          <div
+            className="channel-transcript-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="channel-transcript-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="channel-transcript-modal-header">
+              <div className="channel-transcript-modal-title-row">
+                {transcriptModalVideo.thumbnailUrl ? (
+                  <img
+                    src={transcriptModalVideo.thumbnailUrl}
+                    alt=""
+                    className="channel-transcript-modal-thumb"
+                  />
+                ) : null}
+                <div className="channel-transcript-modal-title-text">
+                  <h2 id="channel-transcript-modal-title" className="channel-transcript-modal-title">
+                    {transcriptModalVideo.title}
+                  </h2>
+                  <p className="channel-transcript-modal-meta">
+                    {transcriptModalVideo.channel?.title || 'Channel'} ·{' '}
+                    {new Date(transcriptModalVideo.publishedAt).toLocaleString()}
+                  </p>
+                  <a
+                    className="channel-transcript-modal-watch"
+                    href={`https://www.youtube.com/watch?v=${transcriptModalVideo.youtubeVideoId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open on YouTube
+                  </a>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="channel-transcript-modal-close"
+                onClick={closeTranscriptModal}
+                aria-label="Close transcript"
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="channel-transcript-modal-toolbar">
+              <label className="channel-transcript-modal-search-label" htmlFor="transcript-in-modal-search">
+                Search in transcript
+              </label>
+              <input
+                id="transcript-in-modal-search"
+                type="search"
+                className="channel-transcript-modal-search-input"
+                placeholder="Keyword…"
+                value={transcriptModalSearch}
+                onChange={(e) => setTranscriptModalSearch(e.target.value)}
+                disabled={transcriptModalLoading || !!transcriptModalError}
+              />
+              <span className="channel-transcript-modal-hit-count" aria-live="polite">
+                {transcriptModalSearch.trim()
+                  ? transcriptHighlightModel.hitCount === 0
+                    ? 'No matches'
+                    : `${transcriptModalHitIndex + 1} / ${transcriptHighlightModel.hitCount}`
+                  : ''}
+              </span>
+              <button
+                type="button"
+                className="channel-transcript-modal-nav"
+                onClick={goPrevTranscriptHit}
+                disabled={
+                  transcriptHighlightModel.hitCount === 0 ||
+                  transcriptModalLoading ||
+                  !!transcriptModalError
+                }
+                aria-label="Previous match"
+              >
+                ↑ Prev
+              </button>
+              <button
+                type="button"
+                className="channel-transcript-modal-nav"
+                onClick={goNextTranscriptHit}
+                disabled={
+                  transcriptHighlightModel.hitCount === 0 ||
+                  transcriptModalLoading ||
+                  !!transcriptModalError
+                }
+                aria-label="Next match"
+              >
+                Next ↓
+              </button>
+            </div>
+
+            <div ref={transcriptModalBodyRef} className="channel-transcript-modal-body">
+              {transcriptModalLoading && (
+                <p className="channel-transcript-modal-status">Loading transcript…</p>
+              )}
+              {!transcriptModalLoading && transcriptModalError && (
+                <p className="error-message channel-transcript-modal-status">{transcriptModalError}</p>
+              )}
+              {!transcriptModalLoading &&
+                !transcriptModalError &&
+                !transcriptModalText.trim() && (
+                  <p className="channel-transcript-modal-status">No transcript text stored for this video.</p>
+                )}
+              {!transcriptModalLoading &&
+                !transcriptModalError &&
+                !!transcriptModalText.trim() &&
+                transcriptHighlightModel.paragraphs.map((parts, pi) => (
+                  <p key={pi} className="channel-transcript-modal-para">
+                    {parts.map((part, si) =>
+                      part.type === 'mark' ? (
+                        <mark
+                          key={si}
+                          className={
+                            part.hitIndex === transcriptModalHitIndex
+                              ? 'channel-transcript-hit channel-transcript-hit-active'
+                              : 'channel-transcript-hit'
+                          }
+                        >
+                          {part.value}
+                        </mark>
+                      ) : (
+                        <span key={si}>{part.value}</span>
+                      )
+                    )}
+                  </p>
+                ))}
+            </div>
           </div>
-        </section>
+        </div>
       )}
     </div>
   );
