@@ -26,5 +26,6 @@ yarn-error.log*
 
 # generated server artifacts
 /server/*-player-script.js
-/server/prisma/*.db
-/server/prisma/*.db-journal
+# Local SQLite (Prisma) — never commit dev/prod DB files
+/server/prisma/**/*.db
+/server/prisma/**/*.db-journal
