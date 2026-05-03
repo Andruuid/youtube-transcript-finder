@@ -143,7 +143,8 @@ export default function ChannelMonitor() {
   const [bulkDownload, setBulkDownload] = useState({
     loading: false,
     message: '',
-    error: ''
+    error: '',
+    partialFailures: false
   });
   const [smartBulkBusy, setSmartBulkBusy] = useState(false);
 
@@ -465,7 +466,12 @@ export default function ChannelMonitor() {
   const handleRemoveChannel = async (youtubeChannelId, titleOrInput) => {
     setError('');
     setStatusMessage('');
-    setBulkDownload({ loading: false, message: '', error: '' });
+    setBulkDownload({
+      loading: false,
+      message: '',
+      error: '',
+      partialFailures: false
+    });
     try {
       await removeChannel(youtubeChannelId);
       setSelectedChannelIds((prev) => {
@@ -495,7 +501,12 @@ export default function ChannelMonitor() {
     setAddBusy(true);
     setError('');
     setStatusMessage('');
-    setBulkDownload({ loading: false, message: '', error: '' });
+    setBulkDownload({
+      loading: false,
+      message: '',
+      error: '',
+      partialFailures: false
+    });
     try {
       const result = await syncChannel(trimmed, 50);
       await loadChannels();
@@ -520,7 +531,12 @@ export default function ChannelMonitor() {
     setDownloadingVideoId(videoId);
     setError('');
     setStatusMessage('');
-    setBulkDownload({ loading: false, message: '', error: '' });
+    setBulkDownload({
+      loading: false,
+      message: '',
+      error: '',
+      partialFailures: false
+    });
     try {
       await downloadTranscript(videoId);
       setStatusMessage('Transcript saved to the local database.');
@@ -541,7 +557,8 @@ export default function ChannelMonitor() {
         loading: false,
         message: '',
         error:
-          'Select at least one visible video (matching the filter/search if any).'
+          'Select at least one visible video (matching the filter/search if any).',
+        partialFailures: false
       });
       return;
     }
@@ -551,7 +568,8 @@ export default function ChannelMonitor() {
     setBulkDownload({
       loading: true,
       message: `Downloading ${selectedVideos.length} transcript(s)…`,
-      error: ''
+      error: '',
+      partialFailures: false
     });
 
     try {
@@ -562,56 +580,75 @@ export default function ChannelMonitor() {
 
       const folderByChannel = new Map();
       let savedCount = 0;
+      let dbOkCount = 0;
+      const failures = [];
 
       for (const video of selectedVideos) {
-        let text =
-          video.hasTranscript &&
-          typeof video.transcriptText === 'string' &&
-          video.transcriptText.length > 0
-            ? video.transcriptText
-            : null;
-        if (!text && video.hasTranscript) {
-          const { transcript } = await fetchTranscriptText(video.youtubeVideoId);
-          text = transcript;
-        } else if (!text) {
-          const data = await downloadTranscript(video.youtubeVideoId);
-          text = data.transcript;
-        }
-        if (typeof text !== 'string' || !text) {
-          throw new Error('Server returned no transcript text');
-        }
+        try {
+          let text =
+            video.hasTranscript &&
+            typeof video.transcriptText === 'string' &&
+            video.transcriptText.length > 0
+              ? video.transcriptText
+              : null;
+          if (!text && video.hasTranscript) {
+            const { transcript } = await fetchTranscriptText(video.youtubeVideoId);
+            text = transcript;
+          } else if (!text) {
+            const data = await downloadTranscript(video.youtubeVideoId);
+            text = data.transcript;
+          }
+          if (typeof text !== 'string' || !text) {
+            throw new Error('Server returned no transcript text');
+          }
 
-        if (baseDir) {
-          const channelFolderName = sanitizeFilePart(
-            video.channel?.title || 'unknown-channel'
-          );
-          let channelFolder = folderByChannel.get(channelFolderName);
-          if (!channelFolder) {
-            channelFolder = await baseDir.getDirectoryHandle(channelFolderName, {
+          dbOkCount += 1;
+
+          if (baseDir) {
+            const channelFolderName = sanitizeFilePart(
+              video.channel?.title || 'unknown-channel'
+            );
+            let channelFolder = folderByChannel.get(channelFolderName);
+            if (!channelFolder) {
+              channelFolder = await baseDir.getDirectoryHandle(channelFolderName, {
+                create: true
+              });
+              folderByChannel.set(channelFolderName, channelFolder);
+            }
+            const fileTitle = sanitizeFilePart(video.title || video.youtubeVideoId);
+            const fileName = `${fileTitle}-${video.youtubeVideoId}.txt`;
+            const fileHandle = await channelFolder.getFileHandle(fileName, {
               create: true
             });
-            folderByChannel.set(channelFolderName, channelFolder);
+            const writable = await fileHandle.createWritable();
+            await writable.write(text);
+            await writable.close();
+            savedCount += 1;
           }
-          const fileTitle = sanitizeFilePart(video.title || video.youtubeVideoId);
-          const fileName = `${fileTitle}-${video.youtubeVideoId}.txt`;
-          const fileHandle = await channelFolder.getFileHandle(fileName, {
-            create: true
+        } catch (err) {
+          failures.push({
+            id: video.youtubeVideoId,
+            message: err?.message || String(err)
           });
-          const writable = await fileHandle.createWritable();
-          await writable.write(text);
-          await writable.close();
-          savedCount += 1;
         }
       }
 
       await refreshVideos();
 
+      const failNote =
+        failures.length > 0
+          ? ` ${failures.length} failed (${failures.map((f) => f.id).join(', ')}).`
+          : '';
+      const totalFail = failures.length === selectedVideos.length;
       setBulkDownload({
         loading: false,
-        message: baseDir
-          ? `Saved ${savedCount} file(s) into ${folderByChannel.size} folder(s); transcripts are also in the database.`
-          : `Saved ${selectedVideos.length} transcript(s) to the database (folder picker not available in this browser).`,
-        error: ''
+        message: totalFail
+          ? ''
+          : baseDir
+            ? `Saved ${savedCount} file(s) into ${folderByChannel.size} folder(s); ${dbOkCount} transcript(s) in the database.${failNote}`
+            : `Saved ${dbOkCount} transcript(s) to the database.${failNote}`,
+        error: totalFail ? failures.map((f) => `${f.id}: ${f.message}`).join(' ') : '',
+        partialFailures: !totalFail && failures.length > 0
       });
     } catch (e) {
       const cancelled = e?.name === 'AbortError';
@@ -620,7 +657,8 @@ export default function ChannelMonitor() {
         message: '',
         error: cancelled
           ? 'Folder selection cancelled.'
-          : e.message || 'Failed to get transcripts.'
+          : e.message || 'Failed to get transcripts.',
+        partialFailures: false
       });
     }
   };
@@ -827,7 +865,15 @@ export default function ChannelMonitor() {
             <p className="error-message channel-bulk-status">{bulkDownload.error}</p>
           )}
           {bulkDownload.message && (
-            <p className="channel-bulk-success channel-bulk-status">{bulkDownload.message}</p>
+            <p
+              className={`channel-bulk-status ${
+                bulkDownload.partialFailures
+                  ? 'channel-bulk-partial'
+                  : 'channel-bulk-success'
+              }`}
+            >
+              {bulkDownload.message}
+            </p>
           )}
           {!videoPanelDisabled && !loading && videos.length === 0 && (
             <p className="channel-empty">No videos found for this filter.</p>

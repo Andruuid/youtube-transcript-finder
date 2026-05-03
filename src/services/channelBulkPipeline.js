@@ -53,6 +53,8 @@ export async function ensureCatalogDepth(
 export async function downloadMissingTranscriptsSequential(videos, onProgress) {
   let downloaded = 0;
   let skipped = 0;
+  /** @type {{ youtubeVideoId: string, title: string, message: string }[]} */
+  const failures = [];
   for (const v of videos) {
     if (v.hasTranscript) {
       skipped += 1;
@@ -65,17 +67,34 @@ export async function downloadMissingTranscriptsSequential(videos, onProgress) {
       });
       continue;
     }
-    await downloadTranscript(v.youtubeVideoId);
-    downloaded += 1;
-    onProgress?.({
-      step: 'transcript',
-      youtubeVideoId: v.youtubeVideoId,
-      downloaded,
-      skipped,
-      message: `Downloaded transcript ${downloaded}: ${v.title || v.youtubeVideoId}`
-    });
+    try {
+      await downloadTranscript(v.youtubeVideoId);
+      downloaded += 1;
+      onProgress?.({
+        step: 'transcript',
+        youtubeVideoId: v.youtubeVideoId,
+        downloaded,
+        skipped,
+        message: `Downloaded transcript ${downloaded}: ${v.title || v.youtubeVideoId}`
+      });
+    } catch (err) {
+      const message = err?.message || String(err);
+      failures.push({
+        youtubeVideoId: v.youtubeVideoId,
+        title: v.title || '',
+        message
+      });
+      onProgress?.({
+        step: 'transcript-error',
+        youtubeVideoId: v.youtubeVideoId,
+        downloaded,
+        skipped,
+        failures: failures.length,
+        message: `Skipped (error): ${v.youtubeVideoId} — ${message}`
+      });
+    }
   }
-  return { downloaded, skipped };
+  return { downloaded, skipped, failures };
 }
 
 /**
@@ -104,12 +123,24 @@ export async function syncCatalogThenFetchMissingTranscripts({
     message: `Fetching transcripts for ${missing} missing out of newest ${slice.length} video(s).`
   });
 
-  const { downloaded, skipped } = await downloadMissingTranscriptsSequential(slice, onProgress);
+  const { downloaded, skipped, failures } = await downloadMissingTranscriptsSequential(
+    slice,
+    onProgress
+  );
+
+  if (failures.length > 0) {
+    onProgress?.({
+      step: 'transcript-batch-summary',
+      failures,
+      message: `Finished with ${failures.length} transcript error(s); others succeeded.`
+    });
+  }
 
   return {
     catalogVideosConsidered: slice.length,
     missingBeforeDownload: missing,
     transcriptsDownloaded: downloaded,
-    transcriptsSkipped: skipped
+    transcriptsSkipped: skipped,
+    transcriptFailures: failures
   };
 }

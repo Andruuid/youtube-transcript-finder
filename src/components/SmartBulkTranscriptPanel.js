@@ -28,7 +28,7 @@ export default function SmartBulkTranscriptPanel({
     setError('');
     setLine('Starting…');
     try {
-      await syncCatalogThenFetchMissingTranscripts({
+      const result = await syncCatalogThenFetchMissingTranscripts({
         channelInput: youtubeChannelId,
         youtubeChannelId,
         targetCount: n,
@@ -36,7 +36,15 @@ export default function SmartBulkTranscriptPanel({
           if (ev?.message) setLine(ev.message);
         }
       });
-      setLine(`Done. Target was newest ${n} video(s); check counts above.`);
+      const fails = result.transcriptFailures || [];
+      let summary = `Done: ${result.transcriptsDownloaded} transcript(s) downloaded`;
+      if (fails.length > 0) {
+        summary += `; ${fails.length} failed (e.g. captions disabled)`;
+        const ids = fails.map((f) => f.youtubeVideoId).join(', ');
+        summary += `: ${ids}`;
+      }
+      summary += `. Target newest ${n} videos — refresh counts above.`;
+      setLine(summary);
       await onFinished?.();
     } catch (e) {
       setError(e?.message || 'Bulk sync/download failed');
