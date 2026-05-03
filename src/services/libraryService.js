@@ -35,11 +35,50 @@ export async function removeChannel(youtubeChannelId) {
   return parseJsonResponse(res, 'Failed to remove channel');
 }
 
-export async function listChannelVideos(youtubeChannelId, status = 'all') {
-  const qp = new URLSearchParams({ status, skip: '0', take: '200' });
+export async function listChannelVideosPage(
+  youtubeChannelId,
+  status = 'all',
+  skip = 0,
+  take = 200
+) {
+  const cappedTake = Math.min(Math.max(Number(take) || 200, 1), 200);
+  const safeSkip = Math.max(Number(skip) || 0, 0);
+  const qp = new URLSearchParams({
+    status,
+    skip: String(safeSkip),
+    take: String(cappedTake)
+  });
   const res = await fetch(`/api/channels/${encodeURIComponent(youtubeChannelId)}/videos?${qp}`);
   const data = await parseJsonResponse(res, 'Failed to load channel videos');
-  return data.items || [];
+  const items = data.items || [];
+  const total = typeof data.total === 'number' ? data.total : items.length + safeSkip;
+  return { items, total };
+}
+
+/** Backwards-compatible: first page only (max 200). Prefer {@link listChannelVideosPage} or {@link listAllChannelVideos}. */
+export async function listChannelVideos(youtubeChannelId, status = 'all') {
+  const { items } = await listChannelVideosPage(youtubeChannelId, status, 0, 200);
+  return items;
+}
+
+export async function getChannelVideoTotal(youtubeChannelId, status = 'all') {
+  const { total } = await listChannelVideosPage(youtubeChannelId, status, 0, 1);
+  return total;
+}
+
+export async function listAllChannelVideos(youtubeChannelId, status = 'all') {
+  const take = 200;
+  let skip = 0;
+  const out = [];
+  let total = Infinity;
+  while (skip < total) {
+    const page = await listChannelVideosPage(youtubeChannelId, status, skip, take);
+    total = page.total;
+    out.push(...page.items);
+    if (page.items.length === 0) break;
+    skip += page.items.length;
+  }
+  return out;
 }
 
 export async function downloadTranscript(videoId) {

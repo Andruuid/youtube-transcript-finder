@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import SmartBulkTranscriptPanel from './SmartBulkTranscriptPanel';
 import './ChannelMonitor.css';
 import {
   downloadTranscript,
@@ -144,6 +145,7 @@ export default function ChannelMonitor() {
     message: '',
     error: ''
   });
+  const [smartBulkBusy, setSmartBulkBusy] = useState(false);
 
   const [transcriptModalVideo, setTranscriptModalVideo] = useState(null);
   const [transcriptModalText, setTranscriptModalText] = useState('');
@@ -167,6 +169,11 @@ export default function ChannelMonitor() {
   const selectedChannels = useMemo(
     () => channels.filter((c) => selectedChannelIds.has(c.youtubeChannelId)),
     [channels, selectedChannelIds]
+  );
+
+  const focusedChannel = useMemo(
+    () => channels.find((c) => c.youtubeChannelId === selectedChannelId),
+    [channels, selectedChannelId]
   );
 
   const allChannelsSelected =
@@ -793,6 +800,7 @@ export default function ChannelMonitor() {
               onClick={handleGetTranscripts}
               disabled={
                 bulkDownload.loading ||
+                smartBulkBusy ||
                 videoPanelDisabled ||
                 selectedVisibleCount === 0
               }
@@ -800,6 +808,21 @@ export default function ChannelMonitor() {
               {bulkDownload.loading ? 'Getting…' : 'Get Transcripts'}
             </button>
           </div>
+          <SmartBulkTranscriptPanel
+            youtubeChannelId={
+              selectedChannelId && selectedChannelIds.has(selectedChannelId)
+                ? selectedChannelId
+                : ''
+            }
+            channelTitle={focusedChannel?.title || ''}
+            disabled={videoPanelDisabled}
+            otherBulkBusy={bulkDownload.loading}
+            onBusyChange={setSmartBulkBusy}
+            onFinished={async () => {
+              await loadChannels();
+              await refreshVideos();
+            }}
+          />
           {bulkDownload.error && (
             <p className="error-message channel-bulk-status">{bulkDownload.error}</p>
           )}
@@ -873,7 +896,9 @@ export default function ChannelMonitor() {
                       type="button"
                       className="search-button channel-download-one-button"
                       onClick={() => handleDownloadTranscript(v.youtubeVideoId)}
-                      disabled={downloadingVideoId === v.youtubeVideoId}
+                      disabled={
+                        downloadingVideoId === v.youtubeVideoId || smartBulkBusy
+                      }
                     >
                       {downloadingVideoId === v.youtubeVideoId
                         ? 'Downloading…'
