@@ -115,6 +115,21 @@ function parseDatetimeLocalToMs(value) {
   return Number.isNaN(ms) ? null : ms;
 }
 
+/** yyyy-mm-dd from stored datetime-local string (for `type="date"` display). */
+function datetimeLocalDatePart(value) {
+  if (!value || typeof value !== 'string') return '';
+  return value.length >= 10 ? value.slice(0, 10) : '';
+}
+
+/** New yyyy-mm-ddTHH:mm with same time as previous value (or 00:00). */
+function withDatetimeLocalDate(previousFull, dateYmd) {
+  if (!dateYmd) return previousFull;
+  const prev = String(previousFull || '');
+  const timePart =
+    prev.length >= 16 && prev[10] === 'T' ? prev.slice(11, 16) : '00:00';
+  return `${dateYmd}T${timePart}`;
+}
+
 /** Keeps videos whose publishedAt falls in [from, to] when bounds are set (local picker values). */
 function filterVideosByPublishedRange(items, publishedFrom, publishedTo) {
   const fromMs = parseDatetimeLocalToMs(publishedFrom);
@@ -831,10 +846,14 @@ export default function ChannelMonitor() {
             </label>
             <input
               id="published-from"
-              type="datetime-local"
+              type="date"
               className="channel-date-input channel-datetime-input"
-              value={publishedFrom}
-              onChange={(e) => setPublishedFrom(e.target.value)}
+              value={datetimeLocalDatePart(publishedFrom)}
+              onChange={(e) =>
+                setPublishedFrom((prev) =>
+                  withDatetimeLocalDate(prev, e.target.value)
+                )
+              }
               disabled={videoPanelDisabled}
             />
             <label htmlFor="published-to" className="channel-date-label">
