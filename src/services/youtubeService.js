@@ -500,15 +500,15 @@ function transcriptRequestUrl(videoId) {
 export const getVideoTranscript = async (videoId) => {
   const url = transcriptRequestUrl(videoId);
   let response;
+  const startupHint =
+    'Start the transcript server in a separate terminal: `cd server && npm start` (default: http://localhost:5001).';
   try {
     response = await fetch(url);
   } catch (e) {
-    const hint =
-      'Start the transcript server (e.g. port 5001) and restart npm after adding proxy, or set REACT_APP_TRANSCRIPT_API_URL.';
     console.error('Error fetching transcript:', e);
     throw new Error(
       e.name === 'TypeError' && String(e.message).includes('fetch')
-        ? `Could not reach transcript service. ${hint}`
+        ? `Could not reach transcript service. ${startupHint}`
         : e.message || 'Network error'
     );
   }
@@ -527,6 +527,13 @@ export const getVideoTranscript = async (videoId) => {
     } catch {
       const stripped = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
       if (stripped) detail = stripped.slice(0, 500);
+    }
+    const lowerDetail = detail.toLowerCase();
+    const isProxyRefused =
+      lowerDetail.includes('proxy error') &&
+      (lowerDetail.includes('econnrefused') || lowerDetail.includes('localhost:5001'));
+    if (isProxyRefused) {
+      throw new Error(`Could not reach transcript service. ${startupHint}`);
     }
     throw new Error(
       detail

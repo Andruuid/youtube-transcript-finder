@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import './App.css';
+import AppNav, { viewSubtitle } from './components/AppNav';
+import AudioDownload from './components/AudioDownload';
 import ChannelMonitor from './components/ChannelMonitor';
 import {
   searchVideos,
@@ -219,32 +221,15 @@ Input:\n` +
     <div className="App">
       <header className="App-header">
         <h1>YouTube Transcript Finder</h1>
-        <p>
-          {activeTab === 'search'
-            ? 'Search for YouTube videos with available transcripts'
-            : 'Monitor saved channels for new uploads and read transcripts'}
-        </p>
-        <nav className="app-tabs" aria-label="Main">
-          <button
-            type="button"
-            className={activeTab === 'search' ? 'app-tab app-tab-active' : 'app-tab'}
-            onClick={() => setActiveTab('search')}
-          >
-            Search
-          </button>
-          <button
-            type="button"
-            className={activeTab === 'channels' ? 'app-tab app-tab-active' : 'app-tab'}
-            onClick={() => setActiveTab('channels')}
-          >
-            Channel monitor
-          </button>
-        </nav>
+        <p>{viewSubtitle(activeTab)}</p>
+        <AppNav activeId={activeTab} onChange={setActiveTab} />
       </header>
 
       <main className="App-main">
         {activeTab === 'channels' ? (
           <ChannelMonitor />
+        ) : activeTab === 'audio' ? (
+          <AudioDownload />
         ) : (
           <>
         <div className="search-container">

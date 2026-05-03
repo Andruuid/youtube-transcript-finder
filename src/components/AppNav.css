@@ -1,0 +1,41 @@
+.app-nav {
+  margin-top: 1.25rem;
+}
+
+.app-nav-inner {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  max-width: 52rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.app-tab {
+  padding: 0.5rem 1.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.15);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.app-tab:hover {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.app-tab-active {
+  background: #fff;
+  color: #1a73e8;
+  border-color: #fff;
+}
+
+.app-tab-active:hover {
+  background: #f1f3f4;
+  color: #1557b0;
+}

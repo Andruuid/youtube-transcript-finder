@@ -1,7 +1,7 @@
 /**
  * Local transcript API for the React app (default port 5001).
  * Install and run: cd server && npm install && npm start
- * Uses youtube-transcript (unofficial timedtext fetch); no YouTube API key.
+ * Uses youtube-transcript for captions; POST /audio-download for MP3 via yt-dlp.
  *
  * Port: TRANSCRIPT_SERVER_PORT or PORT (default 5001). If EADDRINUSE, free the port or
  * pick another port and set "proxy" in the parent package.json to match.
@@ -9,11 +9,15 @@
 import express from 'express';
 // Package "main" is CJS while package.json has "type":"module"; use ESM build explicitly.
 import { YoutubeTranscript } from 'youtube-transcript/dist/youtube-transcript.esm.js';
+import { registerAudioDownload } from './audioDownload.js';
 
 const PORT = Number(
   process.env.TRANSCRIPT_SERVER_PORT || process.env.PORT || 5001
 );
 const app = express();
+
+app.use(express.json({ limit: '64kb' }));
+registerAudioDownload(app);
 
 const VIDEO_ID_RE = /^[a-zA-Z0-9_-]{11}$/;
 

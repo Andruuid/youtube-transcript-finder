@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import './ChannelMonitor.css';
 import {
   resolveChannel,
   checkChannelsForNewVideos,
@@ -44,6 +45,18 @@ function splitTranscriptParagraphs(text) {
     .filter(Boolean);
 }
 
+function sanitizeFilePart(value, fallback = 'untitled') {
+  const noIllegalChars = String(value || '').replace(/[<>:"/\\|?*]/g, '');
+  const printableOnly = Array.from(noIllegalChars)
+    .filter((ch) => ch.charCodeAt(0) >= 32)
+    .join('');
+  const cleaned = printableOnly
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 110);
+  return cleaned || fallback;
+}
+
 export default function ChannelMonitor() {
   const [channels, setChannels] = useState(() => loadChannels());
   const [newInput, setNewInput] = useState('');
@@ -61,6 +74,12 @@ export default function ChannelMonitor() {
     loading: false,
     text: null,
     error: null
+  });
+  const [selectedVideoIds, setSelectedVideoIds] = useState(() => new Set());
+  const [bulkDownload, setBulkDownload] = useState({
+    loading: false,
+    message: '',
+    error: ''
   });
 
   useEffect(() => {
@@ -100,6 +119,8 @@ export default function ChannelMonitor() {
     setResults([]);
     setSelectedVideoId(null);
     setTranscript({ loading: false, text: null, error: null });
+    setSelectedVideoIds(new Set());
+    setBulkDownload({ loading: false, message: '', error: '' });
 
     if (channels.length === 0) {
       setCheckErrors([{ channelId: '', input: '', message: 'Add at least one channel first' }]);
@@ -147,6 +168,91 @@ export default function ChannelMonitor() {
       return;
     }
     loadTranscript(videoId);
+  };
+
+  const toggleVideoSelection = (videoId) => {
+    setSelectedVideoIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(videoId)) {
+        next.delete(videoId);
+      } else {
+        next.add(videoId);
+      }
+      return next;
+    });
+  };
+
+  const allSelected = results.length > 0 && selectedVideoIds.size === results.length;
+
+  const toggleAllSelections = () => {
+    setSelectedVideoIds((prev) => {
+      if (results.length > 0 && prev.size === results.length) {
+        return new Set();
+      }
+      return new Set(results.map((v) => v.videoId));
+    });
+  };
+
+  const handleGetTranscripts = async () => {
+    const selectedVideos = results.filter((v) => selectedVideoIds.has(v.videoId));
+    if (selectedVideos.length === 0) {
+      setBulkDownload({ loading: false, message: '', error: 'Select at least one video first.' });
+      return;
+    }
+    if (typeof window.showDirectoryPicker !== 'function') {
+      setBulkDownload({
+        loading: false,
+        message: '',
+        error:
+          'Your browser does not support folder download here. Use a Chromium-based browser (Chrome/Edge) to save to folders.'
+      });
+      return;
+    }
+
+    setBulkDownload({
+      loading: true,
+      message: `Downloading ${selectedVideos.length} transcript(s)…`,
+      error: ''
+    });
+
+    try {
+      const baseDir = await window.showDirectoryPicker({
+        mode: 'readwrite'
+      });
+      let savedCount = 0;
+      const folderByChannel = new Map();
+
+      for (const video of selectedVideos) {
+        const channelFolderName = sanitizeFilePart(video.channelTitle || 'unknown-channel');
+        let channelFolder = folderByChannel.get(channelFolderName);
+        if (!channelFolder) {
+          channelFolder = await baseDir.getDirectoryHandle(channelFolderName, { create: true });
+          folderByChannel.set(channelFolderName, channelFolder);
+        }
+
+        const transcriptText = await getVideoTranscript(video.videoId);
+        const fileTitle = sanitizeFilePart(video.videoTitle || video.videoId);
+        const fileName = `${fileTitle}-${video.videoId}.txt`;
+        const fileHandle = await channelFolder.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(transcriptText);
+        await writable.close();
+        savedCount += 1;
+      }
+
+      setBulkDownload({
+        loading: false,
+        message: `Saved ${savedCount} transcript(s) into ${folderByChannel.size} channel folder(s).`,
+        error: ''
+      });
+    } catch (e) {
+      const cancelled = e?.name === 'AbortError';
+      setBulkDownload({
+        loading: false,
+        message: '',
+        error: cancelled ? 'Folder selection cancelled.' : e.message || 'Failed to save transcripts.'
+      });
+    }
   };
 
   return (
@@ -278,9 +384,44 @@ export default function ChannelMonitor() {
             <p className="channel-empty">Add channels to check for new uploads.</p>
           )}
           {results.length > 0 && (
-            <ul className="channel-results-list">
+            <>
+              <div className="channel-results-actions">
+                <label className="channel-select-all">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAllSelections}
+                  />
+                  <span>
+                    Select all ({selectedVideoIds.size}/{results.length})
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  className="search-button channel-get-transcripts-button"
+                  onClick={handleGetTranscripts}
+                  disabled={bulkDownload.loading || selectedVideoIds.size === 0}
+                >
+                  {bulkDownload.loading ? 'Getting…' : 'Get Transcripts'}
+                </button>
+              </div>
+              {bulkDownload.error && (
+                <p className="error-message channel-bulk-status">{bulkDownload.error}</p>
+              )}
+              {bulkDownload.message && (
+                <p className="channel-bulk-success channel-bulk-status">{bulkDownload.message}</p>
+              )}
+              <ul className="channel-results-list">
               {results.map((v) => (
                 <li key={v.videoId}>
+                  <label className="channel-row-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={selectedVideoIds.has(v.videoId)}
+                      onChange={() => toggleVideoSelection(v.videoId)}
+                    />
+                    <span>Select</span>
+                  </label>
                   <button
                     type="button"
                     className={
@@ -308,7 +449,8 @@ export default function ChannelMonitor() {
                   </a>
                 </li>
               ))}
-            </ul>
+              </ul>
+            </>
           )}
         </section>
       </div>
