@@ -14,7 +14,7 @@ import { searchLibrary } from './src/services/librarySearchService.js';
 import { summarizeTranscriptViaOpenRouter } from './src/services/transcriptSummarizeService.js';
 
 const PORT = Number(
-  process.env.TRANSCRIPT_SERVER_PORT || process.env.PORT || 5001
+  process.env.TRANSCRIPT_SERVER_PORT || process.env.PORT || 3222
 );
 const app = express();
 
@@ -329,9 +329,9 @@ Port ${PORT} is already in use.
       taskkill /PID <pid_from_last_column> /F
 
   • Or use a different port, then point the React app at it:
-      set TRANSCRIPT_SERVER_PORT=5002
+      set TRANSCRIPT_SERVER_PORT=3223
       npm start
-    (and in the repo root package.json set "proxy" to "http://localhost:5002")
+    (and in the repo root package.json set "proxy" to "http://localhost:3223")
 `);
     process.exit(1);
   }

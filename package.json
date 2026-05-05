@@ -2,7 +2,7 @@
   "name": "youtube-transcript-finder",
   "version": "0.1.0",
   "private": true,
-  "proxy": "http://localhost:5001",
+  "proxy": "http://localhost:3222",
   "dependencies": {
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
@@ -17,7 +17,8 @@
   "scripts": {
     "start": "react-scripts start",
     "dev": "react-scripts start",
-    "transcript-server": "npm start --prefix server",
+    "transcript-server": "node --env-file=server/.env server/index.js",
+    "dev:full": "concurrently \"npm run dev\" \"npm run transcript-server\"",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
@@ -39,5 +40,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

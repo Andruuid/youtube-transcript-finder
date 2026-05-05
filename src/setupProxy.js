@@ -6,7 +6,7 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
  */
 module.exports = function setupProxy(app) {
   const target =
-    process.env.REACT_APP_TRANSCRIPT_API_URL || 'http://localhost:5001';
+    process.env.REACT_APP_TRANSCRIPT_API_URL || 'http://localhost:3222';
 
   app.use(
     ['/api', '/transcript', '/audio-download'],
