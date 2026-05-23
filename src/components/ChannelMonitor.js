@@ -3,6 +3,10 @@ import ReactMarkdown from 'react-markdown';
 import SmartBulkTranscriptPanel from './SmartBulkTranscriptPanel';
 import './ChannelMonitor.css';
 import {
+  downloadChannelListJson,
+  parseChannelListImport
+} from '../services/channelListIO';
+import {
   downloadTranscript,
   fetchTranscriptText,
   listChannels,
@@ -148,6 +152,8 @@ export default function ChannelMonitor() {
   const [channels, setChannels] = useState([]);
   const [channelInput, setChannelInput] = useState('');
   const [addBusy, setAddBusy] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const importFileRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [downloadingVideoId, setDownloadingVideoId] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -525,6 +531,82 @@ export default function ChannelMonitor() {
     }
   };
 
+  const handleExportChannels = () => {
+    if (channels.length === 0) {
+      setError('No channels to export');
+      setStatusMessage('');
+      return;
+    }
+    setError('');
+    setStatusMessage('');
+    downloadChannelListJson(channels);
+    setStatusMessage(`Exported ${channels.length} channel(s) to JSON.`);
+  };
+
+  const handleImportChannelsClick = () => {
+    if (importBusy || addBusy) return;
+    importFileRef.current?.click();
+  };
+
+  const handleImportChannelsFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setImportBusy(true);
+    setError('');
+    setStatusMessage('');
+    setBulkDownload({
+      loading: false,
+      message: '',
+      error: '',
+      partialFailures: false
+    });
+
+    try {
+      const text = await file.text();
+      const { entries } = parseChannelListImport(text);
+      const failures = [];
+      let imported = 0;
+
+      for (let i = 0; i < entries.length; i++) {
+        const { input, label } = entries[i];
+        setStatusMessage(
+          `Importing channel ${i + 1}/${entries.length}: ${label}…`
+        );
+        try {
+          await syncChannel(input, 50);
+          imported += 1;
+        } catch (err) {
+          failures.push(`${label}: ${err.message || 'Sync failed'}`);
+        }
+      }
+
+      await loadChannels();
+
+      if (failures.length === 0) {
+        setStatusMessage(
+          `Imported ${imported} channel${imported === 1 ? '' : 's'} from ${file.name}.`
+        );
+      } else if (imported === 0) {
+        setError(
+          `Import failed for all ${entries.length} channel(s). ${failures[0]}`
+        );
+        setStatusMessage('');
+      } else {
+        setStatusMessage(
+          `Imported ${imported}/${entries.length} channel(s). ${failures.length} failed.`
+        );
+        setError(failures.slice(0, 3).join(' · '));
+      }
+    } catch (err) {
+      setError(err.message || 'Could not import channels');
+      setStatusMessage('');
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
   const handleAddChannel = async () => {
     const trimmed = channelInput.trim();
     if (!trimmed) {
@@ -758,18 +840,50 @@ export default function ChannelMonitor() {
             className="channel-add-input"
             value={channelInput}
             onChange={(e) => setChannelInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !addBusy && handleAddChannel()}
+            onKeyDown={(e) =>
+              e.key === 'Enter' && !addBusy && !importBusy && handleAddChannel()
+            }
             placeholder="Channel URL, @handle, or UC…"
-            disabled={addBusy}
+            disabled={addBusy || importBusy}
           />
           <button
             type="button"
             className="search-button channel-add-button"
             onClick={handleAddChannel}
-            disabled={addBusy}
+            disabled={addBusy || importBusy}
           >
             {addBusy ? 'Adding…' : 'Add Channel'}
           </button>
+        </div>
+        <div className="channel-io-row">
+          <button
+            type="button"
+            className="channel-io-button"
+            onClick={handleExportChannels}
+            disabled={importBusy || addBusy || channels.length === 0}
+          >
+            Export JSON
+          </button>
+          <button
+            type="button"
+            className="channel-io-button"
+            onClick={handleImportChannelsClick}
+            disabled={importBusy || addBusy}
+          >
+            {importBusy ? 'Importing…' : 'Import JSON'}
+          </button>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".json,application/json"
+            className="channel-io-file-input"
+            onChange={handleImportChannelsFile}
+            tabIndex={-1}
+            aria-hidden="true"
+          />
+          <span className="channel-io-hint">
+            Backup or restore your saved channel list.
+          </span>
         </div>
         {error && <div className="error-message channel-monitor-error">{error}</div>}
         {statusMessage && (
