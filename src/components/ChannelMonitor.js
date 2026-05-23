@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
 import SmartBulkTranscriptPanel from './SmartBulkTranscriptPanel';
+import TranscriptReaderModal from './TranscriptReaderModal';
 import './ChannelMonitor.css';
 import {
   downloadChannelListJson,
@@ -13,7 +13,6 @@ import {
   listChannelVideos,
   removeChannel,
   searchLibrary,
-  summarizeTranscript,
   syncChannel
 } from '../services/libraryService';
 
@@ -27,55 +26,6 @@ function sanitizeFilePart(value, fallback = 'untitled') {
     .trim()
     .slice(0, 110);
   return cleaned || fallback;
-}
-
-function splitTranscriptParagraphs(text) {
-  if (!text) return [];
-  return text
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-}
-
-function escapeRegExp(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** Split one paragraph into alternating plain / highlight segments for keyword search. */
-function paragraphToSearchParts(para, query) {
-  const q = query.trim();
-  if (!q) return [{ type: 'text', value: para }];
-  const re = new RegExp(escapeRegExp(q), 'gi');
-  const parts = [];
-  let last = 0;
-  let m = re.exec(para);
-  while (m !== null) {
-    if (m.index > last) {
-      parts.push({ type: 'text', value: para.slice(last, m.index) });
-    }
-    parts.push({ type: 'mark', value: m[0] });
-    last = m.index + m[0].length;
-    if (m[0].length === 0) re.lastIndex++;
-    m = re.exec(para);
-  }
-  if (last < para.length) {
-    parts.push({ type: 'text', value: para.slice(last) });
-  }
-  return parts.length ? parts : [{ type: 'text', value: para }];
-}
-
-function buildTranscriptHighlightModel(text, query) {
-  const paras = splitTranscriptParagraphs(text || '');
-  let hitCount = 0;
-  const paragraphs = paras.map((para) =>
-    paragraphToSearchParts(para, query).map((part) => {
-      if (part.type !== 'mark') return part;
-      const idx = hitCount;
-      hitCount += 1;
-      return { ...part, hitIndex: idx };
-    })
-  );
-  return { paragraphs, hitCount };
 }
 
 function mergeVideosById(items) {
@@ -179,23 +129,6 @@ export default function ChannelMonitor() {
   const [smartBulkBusy, setSmartBulkBusy] = useState(false);
 
   const [transcriptModalVideo, setTranscriptModalVideo] = useState(null);
-  const [transcriptModalText, setTranscriptModalText] = useState('');
-  const [transcriptModalLoading, setTranscriptModalLoading] = useState(false);
-  const [transcriptModalError, setTranscriptModalError] = useState('');
-  const [transcriptModalSearch, setTranscriptModalSearch] = useState('');
-  const [transcriptModalHitIndex, setTranscriptModalHitIndex] = useState(0);
-  const transcriptModalBodyRef = useRef(null);
-  /** Cached short/long summaries in the modal (from DB or fresh API). */
-  const [modalSummaries, setModalSummaries] = useState({
-    short: { text: '', model: '' },
-    long: { text: '', model: '' }
-  });
-  /** Which summary block is shown: short, long, or none yet */
-  const [displayedSummaryTab, setDisplayedSummaryTab] = useState(null);
-  const [transcriptSummarizeBusy, setTranscriptSummarizeBusy] = useState(false);
-  const [transcriptSummarizeError, setTranscriptSummarizeError] = useState('');
-  /** Request in flight for short vs long (button labels). */
-  const [transcriptSummarizeVariant, setTranscriptSummarizeVariant] = useState(null);
 
   const selectedChannels = useMemo(
     () => channels.filter((c) => selectedChannelIds.has(c.youtubeChannelId)),
@@ -217,143 +150,19 @@ export default function ChannelMonitor() {
 
   const closeTranscriptModal = useCallback(() => {
     setTranscriptModalVideo(null);
-    setTranscriptModalText('');
-    setTranscriptModalLoading(false);
-    setTranscriptModalError('');
-    setTranscriptModalSearch('');
-    setTranscriptModalHitIndex(0);
-    setModalSummaries({ short: { text: '', model: '' }, long: { text: '', model: '' } });
-    setDisplayedSummaryTab(null);
-    setTranscriptSummarizeBusy(false);
-    setTranscriptSummarizeError('');
-    setTranscriptSummarizeVariant(null);
   }, []);
 
-  const openTranscriptModal = useCallback(async (v) => {
+  const openTranscriptModal = useCallback((v) => {
     setSelectedVideoId(v.youtubeVideoId);
     setTranscriptModalVideo(v);
-    setTranscriptModalError('');
-    setTranscriptModalSearch('');
-    setTranscriptModalHitIndex(0);
-    setModalSummaries({
-      short: { text: v.sumShort || '', model: v.sumShortModel || '' },
-      long: { text: v.sumLong || '', model: v.sumLongModel || '' }
-    });
-    setDisplayedSummaryTab(v.sumShort ? 'short' : v.sumLong ? 'long' : null);
-    setTranscriptSummarizeBusy(false);
-    setTranscriptSummarizeError('');
-    setTranscriptSummarizeVariant(null);
-    const cached =
-      typeof v.transcriptText === 'string' && v.transcriptText.length > 0;
-    if (cached) {
-      setTranscriptModalText(v.transcriptText);
-      setTranscriptModalLoading(false);
-      return;
-    }
-    setTranscriptModalText('');
-    setTranscriptModalLoading(true);
-    try {
-      const { transcript } = await fetchTranscriptText(v.youtubeVideoId);
-      setTranscriptModalText(transcript);
-    } catch (e) {
-      setTranscriptModalError(e.message || 'Could not load transcript');
-    } finally {
-      setTranscriptModalLoading(false);
-    }
   }, []);
 
-  const runTranscriptSummarize = useCallback(
-    async (variant) => {
-      const text = transcriptModalText.trim();
-      if (!text || transcriptModalLoading || transcriptModalError || !transcriptModalVideo) return;
-      const videoId = transcriptModalVideo.youtubeVideoId;
-      setTranscriptSummarizeBusy(true);
-      setTranscriptSummarizeError('');
-      setTranscriptSummarizeVariant(variant);
-      setDisplayedSummaryTab(variant);
-      setModalSummaries((prev) => ({
-        ...prev,
-        short: variant === 'short' ? { text: '', model: '' } : prev.short,
-        long: variant === 'long' ? { text: '', model: '' } : prev.long
-      }));
-      try {
-        const { summary, model } = await summarizeTranscript(text, variant, videoId);
-        setModalSummaries((prev) => ({
-          ...prev,
-          short: variant === 'short' ? { text: summary, model } : prev.short,
-          long: variant === 'long' ? { text: summary, model } : prev.long
-        }));
-        const patch =
-          variant === 'short'
-            ? { sumShort: summary, sumShortModel: model }
-            : { sumLong: summary, sumLongModel: model };
-        setTranscriptModalVideo((pv) => (pv ? { ...pv, ...patch } : pv));
-        setVideos((list) =>
-          list.map((x) => (x.youtubeVideoId === videoId ? { ...x, ...patch } : x))
-        );
-      } catch (e) {
-        setTranscriptSummarizeError(e.message || 'Summarization failed');
-        setModalSummaries({
-          short: {
-            text: transcriptModalVideo.sumShort || '',
-            model: transcriptModalVideo.sumShortModel || ''
-          },
-          long: {
-            text: transcriptModalVideo.sumLong || '',
-            model: transcriptModalVideo.sumLongModel || ''
-          }
-        });
-        setDisplayedSummaryTab(
-          transcriptModalVideo.sumShort ? 'short' : transcriptModalVideo.sumLong ? 'long' : null
-        );
-        setTranscriptSummarizeVariant(null);
-      } finally {
-        setTranscriptSummarizeBusy(false);
-      }
-    },
-    [transcriptModalText, transcriptModalLoading, transcriptModalError, transcriptModalVideo]
-  );
-
-  const transcriptHighlightModel = useMemo(
-    () => buildTranscriptHighlightModel(transcriptModalText, transcriptModalSearch),
-    [transcriptModalText, transcriptModalSearch]
-  );
-
-  useEffect(() => {
-    setTranscriptModalHitIndex(0);
-  }, [transcriptModalSearch]);
-
-  useEffect(() => {
-    if (!transcriptModalVideo || !transcriptModalSearch.trim()) return;
-    const root = transcriptModalBodyRef.current;
-    if (!root) return;
-    const active = root.querySelector('.channel-transcript-hit-active');
-    active?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [
-    transcriptModalHitIndex,
-    transcriptModalSearch,
-    transcriptModalVideo,
-    transcriptHighlightModel.hitCount,
-    transcriptModalText
-  ]);
-
-  useEffect(() => {
-    if (!transcriptModalVideo) return undefined;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [transcriptModalVideo]);
-
-  useEffect(() => {
-    if (!transcriptModalVideo) return undefined;
-    const onKey = (e) => {
-      if (e.key === 'Escape') closeTranscriptModal();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [transcriptModalVideo, closeTranscriptModal]);
+  const handleTranscriptSummarySaved = useCallback((videoId, patch) => {
+    setTranscriptModalVideo((pv) => (pv ? { ...pv, ...patch } : pv));
+    setVideos((list) =>
+      list.map((x) => (x.youtubeVideoId === videoId ? { ...x, ...patch } : x))
+    );
+  }, []);
 
   useEffect(() => {
     if (!selectedVideoId) return;
@@ -363,18 +172,6 @@ export default function ChannelMonitor() {
       closeTranscriptModal();
     }
   }, [visibleVideos, selectedVideoId, closeTranscriptModal]);
-
-  const goPrevTranscriptHit = () => {
-    const n = transcriptHighlightModel.hitCount;
-    if (n <= 0) return;
-    setTranscriptModalHitIndex((i) => (i - 1 + n) % n);
-  };
-
-  const goNextTranscriptHit = () => {
-    const n = transcriptHighlightModel.hitCount;
-    if (n <= 0) return;
-    setTranscriptModalHitIndex((i) => (i + 1) % n);
-  };
 
   const loadChannels = useCallback(async () => {
     setLoading(true);
@@ -924,12 +721,21 @@ export default function ChannelMonitor() {
                       className="channel-saved-row-button"
                       onClick={() => setSelectedChannelId(c.youtubeChannelId)}
                     >
-                      <span className="channel-saved-title">
-                        {c.title}
-                        {selectedChannelId === c.youtubeChannelId ? ' (focused)' : ''}
-                      </span>
-                      <span className="channel-saved-meta">
-                        Downloaded {c.downloadedCount} / {c.totalCount}
+                      {c.thumbnailUrl ? (
+                        <img
+                          src={c.thumbnailUrl}
+                          alt=""
+                          className="channel-saved-thumb"
+                        />
+                      ) : null}
+                      <span className="channel-saved-text">
+                        <span className="channel-saved-title">
+                          {c.title}
+                          {selectedChannelId === c.youtubeChannelId ? ' (focused)' : ''}
+                        </span>
+                        <span className="channel-saved-meta">
+                          Downloaded {c.downloadedCount} / {c.totalCount}
+                        </span>
                       </span>
                     </button>
                     <button
@@ -1151,246 +957,11 @@ export default function ChannelMonitor() {
         </section>
       </div>
 
-      {transcriptModalVideo && (
-        <div
-          className="channel-transcript-modal-backdrop"
-          role="presentation"
-          onClick={closeTranscriptModal}
-        >
-          <div
-            className="channel-transcript-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="channel-transcript-modal-title"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="channel-transcript-modal-header">
-              <div className="channel-transcript-modal-title-row">
-                {transcriptModalVideo.thumbnailUrl ? (
-                  <img
-                    src={transcriptModalVideo.thumbnailUrl}
-                    alt=""
-                    className="channel-transcript-modal-thumb"
-                  />
-                ) : null}
-                <div className="channel-transcript-modal-title-text">
-                  <h2 id="channel-transcript-modal-title" className="channel-transcript-modal-title">
-                    {transcriptModalVideo.title}
-                  </h2>
-                  <p className="channel-transcript-modal-meta">
-                    {transcriptModalVideo.channel?.title || 'Channel'} ·{' '}
-                    {new Date(transcriptModalVideo.publishedAt).toLocaleString()}
-                  </p>
-                  <a
-                    className="channel-transcript-modal-watch"
-                    href={`https://www.youtube.com/watch?v=${transcriptModalVideo.youtubeVideoId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Open on YouTube
-                  </a>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="channel-transcript-modal-close"
-                onClick={closeTranscriptModal}
-                aria-label="Close transcript"
-              >
-                ×
-              </button>
-            </header>
-
-            <div className="channel-transcript-modal-toolbar">
-              <label className="channel-transcript-modal-search-label" htmlFor="transcript-in-modal-search">
-                Search in transcript
-              </label>
-              <input
-                id="transcript-in-modal-search"
-                type="search"
-                className="channel-transcript-modal-search-input"
-                placeholder="Keyword…"
-                value={transcriptModalSearch}
-                onChange={(e) => setTranscriptModalSearch(e.target.value)}
-                disabled={transcriptModalLoading || !!transcriptModalError}
-              />
-              <span className="channel-transcript-modal-hit-count" aria-live="polite">
-                {transcriptModalSearch.trim()
-                  ? transcriptHighlightModel.hitCount === 0
-                    ? 'No matches'
-                    : `${transcriptModalHitIndex + 1} / ${transcriptHighlightModel.hitCount}`
-                  : ''}
-              </span>
-              <button
-                type="button"
-                className="channel-transcript-modal-nav"
-                onClick={goPrevTranscriptHit}
-                disabled={
-                  transcriptHighlightModel.hitCount === 0 ||
-                  transcriptModalLoading ||
-                  !!transcriptModalError
-                }
-                aria-label="Previous match"
-              >
-                ↑ Prev
-              </button>
-              <button
-                type="button"
-                className="channel-transcript-modal-nav"
-                onClick={goNextTranscriptHit}
-                disabled={
-                  transcriptHighlightModel.hitCount === 0 ||
-                  transcriptModalLoading ||
-                  !!transcriptModalError
-                }
-                aria-label="Next match"
-              >
-                Next ↓
-              </button>
-            </div>
-
-            <div ref={transcriptModalBodyRef} className="channel-transcript-modal-body">
-              {transcriptModalLoading && (
-                <p className="channel-transcript-modal-status">Loading transcript…</p>
-              )}
-              {!transcriptModalLoading && transcriptModalError && (
-                <p className="error-message channel-transcript-modal-status">{transcriptModalError}</p>
-              )}
-              {!transcriptModalLoading &&
-                !transcriptModalError &&
-                !transcriptModalText.trim() && (
-                  <p className="channel-transcript-modal-status">No transcript text stored for this video.</p>
-                )}
-              {!transcriptModalLoading &&
-                !transcriptModalError &&
-                !!transcriptModalText.trim() && (
-                  <>
-                    <section className="channel-transcript-summary-panel" aria-label="Summary">
-                      <div className="channel-transcript-summary-actions">
-                        <button
-                          type="button"
-                          className="search-button channel-transcript-summarize-button"
-                          onClick={() => void runTranscriptSummarize('short')}
-                          disabled={transcriptSummarizeBusy}
-                        >
-                          {transcriptSummarizeBusy && transcriptSummarizeVariant === 'short'
-                            ? 'Summarizing…'
-                            : 'Summarize Short'}
-                        </button>
-                        <button
-                          type="button"
-                          className="search-button channel-transcript-summarize-button"
-                          onClick={() => void runTranscriptSummarize('long')}
-                          disabled={transcriptSummarizeBusy}
-                        >
-                          {transcriptSummarizeBusy && transcriptSummarizeVariant === 'long'
-                            ? 'Summarizing…'
-                            : 'Summarize Long'}
-                        </button>
-                      </div>
-                      {modalSummaries.short.text.trim() &&
-                        modalSummaries.long.text.trim() &&
-                        !transcriptSummarizeBusy && (
-                          <div
-                            className="channel-transcript-summary-view-tabs"
-                            role="tablist"
-                            aria-label="Stored summaries"
-                          >
-                            <button
-                              type="button"
-                              role="tab"
-                              aria-selected={displayedSummaryTab === 'short'}
-                              className={
-                                displayedSummaryTab === 'short'
-                                  ? 'channel-transcript-summary-tab is-active'
-                                  : 'channel-transcript-summary-tab'
-                              }
-                              onClick={() => setDisplayedSummaryTab('short')}
-                            >
-                              View short
-                            </button>
-                            <button
-                              type="button"
-                              role="tab"
-                              aria-selected={displayedSummaryTab === 'long'}
-                              className={
-                                displayedSummaryTab === 'long'
-                                  ? 'channel-transcript-summary-tab is-active'
-                                  : 'channel-transcript-summary-tab'
-                              }
-                              onClick={() => setDisplayedSummaryTab('long')}
-                            >
-                              View long
-                            </button>
-                          </div>
-                        )}
-                      {!!transcriptSummarizeError && (
-                        <p className="error-message channel-transcript-summary-status">{transcriptSummarizeError}</p>
-                      )}
-                      {displayedSummaryTab &&
-                        (() => {
-                          const payload =
-                            displayedSummaryTab === 'short'
-                              ? modalSummaries.short
-                              : modalSummaries.long;
-                          const busyThis =
-                            transcriptSummarizeBusy &&
-                            transcriptSummarizeVariant === displayedSummaryTab;
-                          const hasText = !!payload.text.trim();
-                          if (!hasText && !busyThis) return null;
-                          return (
-                            <div className="channel-transcript-summary-output">
-                              {payload.model && !busyThis && (
-                                <p className="channel-transcript-summary-model">
-                                  Model:{' '}
-                                  <span className="channel-transcript-summary-model-slug">
-                                    {payload.model}
-                                  </span>
-                                </p>
-                              )}
-                              <h3 className="channel-transcript-summary-heading">
-                                Summary ({displayedSummaryTab === 'short' ? 'Short' : 'Long'})
-                              </h3>
-                              {busyThis ? (
-                                <p className="channel-transcript-modal-status">Summarizing…</p>
-                              ) : (
-                                <div className="channel-transcript-summary-markdown">
-                                  <ReactMarkdown>{payload.text}</ReactMarkdown>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                    </section>
-
-                    <h3 className="channel-transcript-full-heading">Full transcript</h3>
-
-                    {transcriptHighlightModel.paragraphs.map((parts, pi) => (
-                      <p key={pi} className="channel-transcript-modal-para">
-                        {parts.map((part, si) =>
-                          part.type === 'mark' ? (
-                            <mark
-                              key={si}
-                              className={
-                                part.hitIndex === transcriptModalHitIndex
-                                  ? 'channel-transcript-hit channel-transcript-hit-active'
-                                  : 'channel-transcript-hit'
-                              }
-                            >
-                              {part.value}
-                            </mark>
-                          ) : (
-                            <span key={si}>{part.value}</span>
-                          )
-                        )}
-                      </p>
-                    ))}
-                  </>
-                )}
-            </div>
-          </div>
-        </div>
-      )}
+      <TranscriptReaderModal
+        video={transcriptModalVideo}
+        onClose={closeTranscriptModal}
+        onSummarySaved={handleTranscriptSummarySaved}
+      />
     </div>
   );
 }

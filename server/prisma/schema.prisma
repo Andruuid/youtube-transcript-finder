@@ -12,6 +12,7 @@ model Channel {
   youtubeChannelId String   @unique
   title            String
   handle           String?
+  thumbnailUrl     String?
   lastSyncedAt     DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
