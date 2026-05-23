@@ -72,11 +72,13 @@ app.post('/api/channels/sync', async (req, res) => {
         youtubeChannelId: channel.youtubeChannelId,
         title: channel.title,
         handle: channel.handle,
+        thumbnailUrl: channel.thumbnailUrl,
         lastSyncedAt: new Date()
       },
       update: {
         title: channel.title,
         handle: channel.handle,
+        thumbnailUrl: channel.thumbnailUrl,
         lastSyncedAt: new Date()
       }
     });
@@ -121,7 +123,8 @@ app.post('/api/channels/sync', async (req, res) => {
       channel: {
         youtubeChannelId: upsertedChannel.youtubeChannelId,
         title: upsertedChannel.title,
-        handle: upsertedChannel.handle
+        handle: upsertedChannel.handle,
+        thumbnailUrl: upsertedChannel.thumbnailUrl
       },
       syncedVideos: videos.length,
       totalCount,
@@ -154,6 +157,7 @@ app.get('/api/channels', async (_req, res) => {
         youtubeChannelId: channel.youtubeChannelId,
         title: channel.title,
         handle: channel.handle,
+        thumbnailUrl: channel.thumbnailUrl,
         lastSyncedAt: channel.lastSyncedAt,
         totalCount: channel._count.videos,
         downloadedCount,

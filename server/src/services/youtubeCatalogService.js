@@ -63,10 +63,13 @@ export async function resolveChannel(rawInput) {
   if (!item) {
     throw new Error('Channel not found');
   }
+  const thumbs = item.snippet?.thumbnails;
   return {
     youtubeChannelId: item.id,
     title: item.snippet?.title || rawInput.trim(),
-    handle: parsed.type === 'handle' ? parsed.handle : null
+    handle: parsed.type === 'handle' ? parsed.handle : null,
+    thumbnailUrl:
+      thumbs?.medium?.url || thumbs?.default?.url || thumbs?.high?.url || null
   };
 }
 
