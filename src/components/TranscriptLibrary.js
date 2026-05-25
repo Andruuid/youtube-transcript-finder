@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import TranscriptReaderModal from './TranscriptReaderModal';
+import ChannelAvatar from './ChannelAvatar';
 import './TranscriptLibrary.css';
 import { listAllChannelVideos, listChannels } from '../services/libraryService';
 
@@ -118,9 +119,8 @@ export default function TranscriptLibrary() {
                     onClick={() => handleChannelSelect(c.youtubeChannelId)}
                   >
                     {c.thumbnailUrl ? (
-                      <img
+                      <ChannelAvatar
                         src={c.thumbnailUrl}
-                        alt=""
                         className="transcript-library-channel-thumb"
                       />
                     ) : null}

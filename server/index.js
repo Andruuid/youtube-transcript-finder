@@ -12,6 +12,13 @@ import {
 } from './src/services/transcriptService.js';
 import { searchLibrary } from './src/services/librarySearchService.js';
 import { summarizeTranscriptViaOpenRouter } from './src/services/transcriptSummarizeService.js';
+import {
+  backfillMissingChannelThumbnails,
+  formatChannelThumbnailUrl,
+  getStoredChannelThumbnail,
+  persistChannelThumbnail,
+  toThumbnailBuffer
+} from './src/services/channelThumbnailService.js';
 
 const PORT = Number(
   process.env.TRANSCRIPT_SERVER_PORT || process.env.PORT || 3222
@@ -83,6 +90,22 @@ app.post('/api/channels/sync', async (req, res) => {
       }
     });
 
+    if (channel.thumbnailUrl) {
+      try {
+        await persistChannelThumbnail(upsertedChannel.id, channel.thumbnailUrl);
+      } catch (error) {
+        console.warn(
+          '[channel-sync] thumbnail download failed',
+          channel.youtubeChannelId,
+          error?.message || error
+        );
+      }
+    }
+
+    const channelWithThumbnail = await prisma.channel.findUnique({
+      where: { id: upsertedChannel.id }
+    });
+
     const { videos, nextPageToken } = await fetchChannelVideos(
       channel.youtubeChannelId,
       limit,
@@ -121,10 +144,10 @@ app.post('/api/channels/sync', async (req, res) => {
 
     return res.json({
       channel: {
-        youtubeChannelId: upsertedChannel.youtubeChannelId,
-        title: upsertedChannel.title,
-        handle: upsertedChannel.handle,
-        thumbnailUrl: upsertedChannel.thumbnailUrl
+        youtubeChannelId: channelWithThumbnail.youtubeChannelId,
+        title: channelWithThumbnail.title,
+        handle: channelWithThumbnail.handle,
+        thumbnailUrl: formatChannelThumbnailUrl(channelWithThumbnail)
       },
       syncedVideos: videos.length,
       totalCount,
@@ -150,6 +173,8 @@ app.get('/api/channels', async (_req, res) => {
     orderBy: { title: 'asc' }
   });
 
+  void backfillMissingChannelThumbnails(channels);
+
   return res.json({
     channels: channels.map((channel) => {
       const downloadedCount = channel.videos.filter((v) => v.hasTranscript).length;
@@ -157,7 +182,7 @@ app.get('/api/channels', async (_req, res) => {
         youtubeChannelId: channel.youtubeChannelId,
         title: channel.title,
         handle: channel.handle,
-        thumbnailUrl: channel.thumbnailUrl,
+        thumbnailUrl: formatChannelThumbnailUrl(channel),
         lastSyncedAt: channel.lastSyncedAt,
         totalCount: channel._count.videos,
         downloadedCount,
@@ -165,6 +190,23 @@ app.get('/api/channels', async (_req, res) => {
       };
     })
   });
+});
+
+app.get('/api/channels/:youtubeChannelId/thumbnail', async (req, res) => {
+  const youtubeChannelId = String(req.params.youtubeChannelId || '').trim();
+  if (!youtubeChannelId) {
+    return res.status(400).json({ error: 'Missing channel id' });
+  }
+
+  const channel = await getStoredChannelThumbnail(youtubeChannelId);
+  const body = toThumbnailBuffer(channel?.thumbnailData);
+  if (!body?.length) {
+    return res.status(404).json({ error: 'Channel thumbnail not found' });
+  }
+
+  res.type(channel.thumbnailMimeType || 'image/jpeg');
+  res.set('Cache-Control', 'public, max-age=86400');
+  return res.end(body);
 });
 
 app.delete('/api/channels/:youtubeChannelId', async (req, res) => {

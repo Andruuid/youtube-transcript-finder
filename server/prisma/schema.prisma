@@ -12,7 +12,10 @@ model Channel {
   youtubeChannelId String   @unique
   title            String
   handle           String?
+  /** Original YouTube thumbnail URL (used to refresh stored image). */
   thumbnailUrl     String?
+  thumbnailData    Bytes?
+  thumbnailMimeType String?
   lastSyncedAt     DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

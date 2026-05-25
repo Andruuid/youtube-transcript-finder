@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SmartBulkTranscriptPanel from './SmartBulkTranscriptPanel';
 import TranscriptReaderModal from './TranscriptReaderModal';
+import ChannelAvatar from './ChannelAvatar';
 import './ChannelMonitor.css';
 import {
   downloadChannelListJson,
@@ -722,9 +723,8 @@ export default function ChannelMonitor() {
                       onClick={() => setSelectedChannelId(c.youtubeChannelId)}
                     >
                       {c.thumbnailUrl ? (
-                        <img
+                        <ChannelAvatar
                           src={c.thumbnailUrl}
-                          alt=""
                           className="channel-saved-thumb"
                         />
                       ) : null}
@@ -777,7 +777,7 @@ export default function ChannelMonitor() {
               disabled={videoPanelDisabled}
             />
             <label htmlFor="published-to" className="channel-date-label">
-              Published to
+              to
             </label>
             <input
               id="published-to"
@@ -799,6 +799,21 @@ export default function ChannelMonitor() {
               Clear range
             </button>
           </div>
+          <SmartBulkTranscriptPanel
+            youtubeChannelId={
+              selectedChannelId && selectedChannelIds.has(selectedChannelId)
+                ? selectedChannelId
+                : ''
+            }
+            channelTitle={focusedChannel?.title || ''}
+            disabled={videoPanelDisabled}
+            otherBulkBusy={bulkDownload.loading}
+            onBusyChange={setSmartBulkBusy}
+            onFinished={async () => {
+              await loadChannels();
+              await refreshVideos();
+            }}
+          />
           <div className="channel-results-actions">
             <label className="channel-select-all">
               <input
@@ -845,21 +860,6 @@ export default function ChannelMonitor() {
               {bulkDownload.loading ? 'Getting…' : 'Get Transcripts'}
             </button>
           </div>
-          <SmartBulkTranscriptPanel
-            youtubeChannelId={
-              selectedChannelId && selectedChannelIds.has(selectedChannelId)
-                ? selectedChannelId
-                : ''
-            }
-            channelTitle={focusedChannel?.title || ''}
-            disabled={videoPanelDisabled}
-            otherBulkBusy={bulkDownload.loading}
-            onBusyChange={setSmartBulkBusy}
-            onFinished={async () => {
-              await loadChannels();
-              await refreshVideos();
-            }}
-          />
           {bulkDownload.error && (
             <p className="error-message channel-bulk-status">{bulkDownload.error}</p>
           )}
