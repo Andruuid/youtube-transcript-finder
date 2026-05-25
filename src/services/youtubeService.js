@@ -1,3 +1,5 @@
+import { apiFetch } from './apiClient';
+
 const YOUTUBE_API_KEY = process.env.REACT_APP_YOUTUBE_API_KEY || '';
 
 // Set to false to use real data from the YouTube API
@@ -527,7 +529,7 @@ export const getVideoTranscript = async (videoId) => {
   const startupHint =
     'Start the transcript server in a separate terminal: `cd server && npm start` (default: http://localhost:5001).';
   try {
-    response = await fetch(url);
+    response = await apiFetch(url);
   } catch (e) {
     console.error('Error fetching transcript:', e);
     throw new Error(

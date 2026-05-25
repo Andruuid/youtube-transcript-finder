@@ -26,6 +26,14 @@ import {
   listIdeas,
   saveIdea
 } from './src/services/ideaService.js';
+import {
+  clearAccessCookie,
+  createAccessAuthMiddleware,
+  getAccessPassword,
+  isAccessRequired,
+  isAuthenticated,
+  setAccessCookie
+} from './src/middleware/accessAuth.js';
 
 const PORT = Number(
   process.env.TRANSCRIPT_SERVER_PORT || process.env.PORT || 3222
@@ -42,6 +50,40 @@ if (!youtubeApiKey) {
     '[startup] YOUTUBE_API_KEY is still the placeholder in server/.env. Channel import/sync will fail until you set a real YouTube Data API v3 key and restart.'
   );
 }
+
+if (isAccessRequired()) {
+  console.log('[startup] Shared access password is enabled (ACCESS_PASSWORD).');
+} else {
+  console.log('[startup] No ACCESS_PASSWORD set; API is open to anyone who can reach this server.');
+}
+
+app.get('/api/auth/session', (req, res) => {
+  const required = isAccessRequired();
+  return res.json({
+    required,
+    authenticated: !required || isAuthenticated(req)
+  });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const expected = getAccessPassword();
+  if (!expected) {
+    return res.json({ ok: true });
+  }
+  const password = String(req.body?.password || '');
+  if (password !== expected) {
+    return res.status(401).json({ error: 'Wrong password' });
+  }
+  setAccessCookie(res, req, password);
+  return res.json({ ok: true });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  clearAccessCookie(res, req);
+  return res.json({ ok: true });
+});
+
+app.use(createAccessAuthMiddleware());
 
 app.get('/transcript/:videoId', async (req, res) => {
   const { videoId } = req.params;

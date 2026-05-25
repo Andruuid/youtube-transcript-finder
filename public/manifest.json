@@ -1,6 +1,6 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "Transcript Tool",
+  "name": "YouTube Transcript Tool",
   "icons": [
     {
       "src": "favicon.ico",

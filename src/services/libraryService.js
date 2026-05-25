@@ -1,3 +1,5 @@
+import { apiFetch } from './apiClient';
+
 async function parseJsonResponse(res, fallbackMessage) {
   const raw = await res.text();
   let body = {};
@@ -13,7 +15,7 @@ async function parseJsonResponse(res, fallbackMessage) {
 }
 
 export async function syncChannel(channelInput, limit = 50, pageToken = '') {
-  const res = await fetch('/api/channels/sync', {
+  const res = await apiFetch('/api/channels/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ channelInput, limit, pageToken })
@@ -22,13 +24,13 @@ export async function syncChannel(channelInput, limit = 50, pageToken = '') {
 }
 
 export async function listChannels() {
-  const res = await fetch('/api/channels');
+  const res = await apiFetch('/api/channels');
   const data = await parseJsonResponse(res, 'Failed to load channels');
   return data.channels || [];
 }
 
 export async function removeChannel(youtubeChannelId) {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/channels/${encodeURIComponent(youtubeChannelId)}`,
     { method: 'DELETE' }
   );
@@ -48,7 +50,7 @@ export async function listChannelVideosPage(
     skip: String(safeSkip),
     take: String(cappedTake)
   });
-  const res = await fetch(`/api/channels/${encodeURIComponent(youtubeChannelId)}/videos?${qp}`);
+  const res = await apiFetch(`/api/channels/${encodeURIComponent(youtubeChannelId)}/videos?${qp}`);
   const data = await parseJsonResponse(res, 'Failed to load channel videos');
   const items = data.items || [];
   const total = typeof data.total === 'number' ? data.total : items.length + safeSkip;
@@ -82,7 +84,7 @@ export async function listAllChannelVideos(youtubeChannelId, status = 'all') {
 }
 
 export async function downloadTranscript(videoId) {
-  const res = await fetch(`/api/videos/${encodeURIComponent(videoId)}/download-transcript`, {
+  const res = await apiFetch(`/api/videos/${encodeURIComponent(videoId)}/download-transcript`, {
     method: 'POST'
   });
   return parseJsonResponse(res, 'Failed to download transcript');
@@ -107,14 +109,14 @@ export async function searchLibrary(query, channelIdOrOptions = '') {
   if (channelIds.length === 1) qp.set('channelId', channelIds[0]);
   else if (channelIds.length > 1) qp.set('channelIds', channelIds.join(','));
   if (downloadedOnly) qp.set('downloadedOnly', '1');
-  const res = await fetch(`/api/search?${qp}`);
+  const res = await apiFetch(`/api/search?${qp}`);
   const data = await parseJsonResponse(res, 'Failed to search library');
   return data.items || [];
 }
 
 /** Fetches video lengths from YouTube metadata for rows missing durationSeconds. */
 export async function backfillVideoDurations(channelIds = []) {
-  const res = await fetch('/api/videos/backfill-durations', {
+  const res = await apiFetch('/api/videos/backfill-durations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ channelIds })
@@ -123,8 +125,8 @@ export async function backfillVideoDurations(channelIds = []) {
 }
 
 /** Loads transcript text (prefers DB when already downloaded). */
-export async function fetchTranscriptText(videoId) {
-  const res = await fetch(`/transcript/${encodeURIComponent(videoId)}`);
+export async function apiFetchTranscriptText(videoId) {
+  const res = await apiFetch(`/transcript/${encodeURIComponent(videoId)}`);
   const data = await parseJsonResponse(res, 'Failed to load transcript');
   return {
     transcript: typeof data.transcript === 'string' ? data.transcript : '',
@@ -137,7 +139,7 @@ export async function fetchTranscriptText(videoId) {
  * Pass youtubeVideoId so the server can persist summary + model on the Video row.
  */
 export async function summarizeTranscript(transcript, mode, youtubeVideoId = '') {
-  const res = await fetch('/api/summarize-transcript', {
+  const res = await apiFetch('/api/summarize-transcript', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -154,7 +156,7 @@ export async function summarizeTranscript(transcript, mode, youtubeVideoId = '')
 }
 
 export async function importStructuredSummaries(youtubeChannelId, items) {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/channels/${encodeURIComponent(youtubeChannelId)}/import-structured-summaries`,
     {
       method: 'POST',

@@ -1,4 +1,4 @@
-# YouTube Transcript Finder
+# YouTube Transcript Tool
 
 ## Setup
 

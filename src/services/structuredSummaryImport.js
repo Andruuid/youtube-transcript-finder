@@ -1,3 +1,5 @@
+import { apiFetch } from './apiClient';
+
 async function parseJsonResponse(res, fallbackMessage) {
   const raw = await res.text();
   let body = {};
@@ -124,7 +126,7 @@ export async function pickAndReadStructuredSummaryFolder() {
 
 export async function importStructuredSummariesFromFolder(youtubeChannelId) {
   const { items, errors = [] } = await pickAndReadStructuredSummaryFolder();
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/channels/${encodeURIComponent(youtubeChannelId)}/import-structured-summaries`,
     {
       method: 'POST',

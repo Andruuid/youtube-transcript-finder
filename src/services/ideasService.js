@@ -1,3 +1,5 @@
+import { apiFetch } from './apiClient';
+
 async function parseJsonResponse(res, fallbackMessage) {
   const raw = await res.text();
   let body = {};
@@ -13,13 +15,13 @@ async function parseJsonResponse(res, fallbackMessage) {
 }
 
 export async function listIdeas() {
-  const res = await fetch('/api/ideas');
+  const res = await apiFetch('/api/ideas');
   const data = await parseJsonResponse(res, 'Failed to load ideas');
   return data.items || [];
 }
 
 export async function getIdeaByVideoId(youtubeVideoId) {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/ideas/by-video/${encodeURIComponent(youtubeVideoId)}`
   );
   const data = await parseJsonResponse(res, 'Failed to load idea');
@@ -27,7 +29,7 @@ export async function getIdeaByVideoId(youtubeVideoId) {
 }
 
 export async function saveIdea(payload) {
-  const res = await fetch('/api/ideas', {
+  const res = await apiFetch('/api/ideas', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -37,7 +39,7 @@ export async function saveIdea(payload) {
 }
 
 export async function deleteIdea(id) {
-  const res = await fetch(`/api/ideas/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/api/ideas/${encodeURIComponent(id)}`, {
     method: 'DELETE'
   });
   return parseJsonResponse(res, 'Failed to delete idea');
