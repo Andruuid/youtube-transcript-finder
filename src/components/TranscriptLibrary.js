@@ -16,6 +16,22 @@ import {
   reconcileSelectedChannelIds,
   writeStoredSelectedChannelIds
 } from '../utils/channelSelectionStorage';
+import {
+  importStructuredSummariesFromFolder,
+  summarizeStructuredImportResult
+} from '../services/structuredSummaryImport';
+import { hasStructuredSummary } from '../utils/structuredSummaryUtils';
+
+const VIEW_MODE_STORAGE_KEY = 'transcriptLibraryViewMode';
+
+function readStoredViewMode() {
+  try {
+    const value = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    return value === 'table' ? 'table' : 'cards';
+  } catch {
+    return 'cards';
+  }
+}
 
 function hasSummary(video) {
   return !!(video.sumShort?.trim() || video.sumLong?.trim());
@@ -39,12 +55,17 @@ function passesMinDurationFilter(video, minMinutes) {
 }
 
 function formatDuration(seconds) {
-  if (seconds == null || seconds <= 0) return '';
+  if (seconds == null || seconds <= 0) return '—';
   const sec = Math.round(seconds);
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   if (h > 0) return `${h}:${String(m).padStart(2, '0')} hr`;
   return `${m} min`;
+}
+
+function displayCell(value) {
+  const text = String(value || '').trim();
+  return text || '—';
 }
 
 function sanitizeFilePart(value, fallback = 'untitled') {
@@ -79,6 +100,13 @@ export default function TranscriptLibrary() {
     error: '',
     partialFailures: false
   });
+  const [viewMode, setViewMode] = useState(() => readStoredViewMode());
+  const [summaryImport, setSummaryImport] = useState({
+    loading: false,
+    message: '',
+    error: '',
+    partialFailures: false
+  });
   const persistSelectionRef = useRef(false);
 
   const channelsWithTranscripts = useMemo(
@@ -97,12 +125,43 @@ export default function TranscriptLibrary() {
 
   const isSearching = !!searchQuery.trim();
   const multiChannelView = selectedChannels.length > 1;
+  const singleChannelSelected = selectedChannels.length === 1;
   const hasDurationFilter = minMinutes > 0;
 
   const visibleVideos = useMemo(
     () => videos.filter((v) => passesMinDurationFilter(v, minMinutes)),
     [videos, minMinutes]
   );
+
+  const structuredSummaryVideos = useMemo(
+    () => visibleVideos.filter((v) => hasStructuredSummary(v)),
+    [visibleVideos]
+  );
+
+  const structuredSummaryNav = useMemo(() => {
+    if (!modalVideo || structuredSummaryVideos.length === 0) return null;
+    const currentIndex = structuredSummaryVideos.findIndex(
+      (v) => v.youtubeVideoId === modalVideo.youtubeVideoId
+    );
+    if (currentIndex < 0) return null;
+
+    const total = structuredSummaryVideos.length;
+    return {
+      current: currentIndex + 1,
+      total,
+      canNavigate: total > 1,
+      onPrev: () => {
+        const nextIndex =
+          (currentIndex - 1 + structuredSummaryVideos.length) %
+          structuredSummaryVideos.length;
+        setModalVideo(structuredSummaryVideos[nextIndex]);
+      },
+      onNext: () => {
+        const nextIndex = (currentIndex + 1) % structuredSummaryVideos.length;
+        setModalVideo(structuredSummaryVideos[nextIndex]);
+      }
+    };
+  }, [modalVideo, structuredSummaryVideos]);
 
   const unknownDurationCount = useMemo(
     () =>
@@ -158,6 +217,14 @@ export default function TranscriptLibrary() {
     if (!persistSelectionRef.current) return;
     writeStoredSelectedChannelIds(selectedChannelIds);
   }, [selectedChannelIds]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+    } catch {
+      // ignore storage errors
+    }
+  }, [viewMode]);
 
   const refreshVideos = useCallback(async () => {
     const ids = channelsWithTranscripts
@@ -375,6 +442,51 @@ export default function TranscriptLibrary() {
     }
   };
 
+  const handleImportStructuredSummaries = async () => {
+    if (!singleChannelSelected) return;
+    const channelId = selectedChannels[0].youtubeChannelId;
+
+    setSummaryImport({
+      loading: true,
+      message: 'Reading JSON files…',
+      error: '',
+      partialFailures: false
+    });
+    setError('');
+
+    try {
+      const result = await importStructuredSummariesFromFolder(channelId);
+      const { message, partialFailures } = summarizeStructuredImportResult(result);
+      const totalFail = (result.imported || 0) === 0 && (result.skipped || 0) > 0;
+
+      setSummaryImport({
+        loading: false,
+        message: totalFail ? '' : message,
+        error: totalFail
+          ? (result.results || [])
+              .filter((row) => row.status !== 'imported')
+              .map((row) => `${row.file}: ${row.error || row.status}`)
+              .join(' ')
+          : '',
+        partialFailures: partialFailures && !totalFail
+      });
+
+      if ((result.imported || 0) > 0) {
+        await refreshVideos();
+      }
+    } catch (e) {
+      const cancelled = e?.name === 'AbortError';
+      setSummaryImport({
+        loading: false,
+        message: '',
+        error: cancelled
+          ? 'Folder selection cancelled.'
+          : e.message || 'Structured summary import failed.',
+        partialFailures: false
+      });
+    }
+  };
+
   const videoPanelDisabled = !loadingChannels && selectedChannels.length === 0;
 
   return (
@@ -538,6 +650,53 @@ export default function TranscriptLibrary() {
                     Select all ({selectedVisibleCount}/{visibleVideos.length})
                   </span>
                 </label>
+                <div
+                  className="transcript-library-view-toggle"
+                  role="group"
+                  aria-label="Library view mode"
+                >
+                  <button
+                    type="button"
+                    className={
+                      viewMode === 'cards'
+                        ? 'transcript-library-view-button is-active'
+                        : 'transcript-library-view-button'
+                    }
+                    onClick={() => setViewMode('cards')}
+                    aria-pressed={viewMode === 'cards'}
+                  >
+                    Cards
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      viewMode === 'table'
+                        ? 'transcript-library-view-button is-active'
+                        : 'transcript-library-view-button'
+                    }
+                    onClick={() => setViewMode('table')}
+                    aria-pressed={viewMode === 'table'}
+                  >
+                    Table
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="search-button transcript-library-import-button"
+                  onClick={handleImportStructuredSummaries}
+                  disabled={
+                    summaryImport.loading ||
+                    videoPanelDisabled ||
+                    !singleChannelSelected
+                  }
+                  title={
+                    singleChannelSelected
+                      ? 'Import structured summary JSON files from a folder (one channel at a time)'
+                      : 'Select exactly one channel to import structured summaries'
+                  }
+                >
+                  {summaryImport.loading ? 'Importing…' : 'Import Structured Summaries'}
+                </button>
                 <button
                   type="button"
                   className="search-button transcript-library-download-button"
@@ -549,6 +708,20 @@ export default function TranscriptLibrary() {
                   {bulkDownload.loading ? 'Downloading…' : 'Download Transcripts'}
                 </button>
               </div>
+              {summaryImport.error && (
+                <p className="error-message transcript-library-bulk-status">{summaryImport.error}</p>
+              )}
+              {summaryImport.message && (
+                <p
+                  className={`transcript-library-bulk-status ${
+                    summaryImport.partialFailures
+                      ? 'transcript-library-bulk-partial'
+                      : 'transcript-library-bulk-success'
+                  }`}
+                >
+                  {summaryImport.message}
+                </p>
+              )}
               {bulkDownload.error && (
                 <p className="error-message transcript-library-bulk-status">{bulkDownload.error}</p>
               )}
@@ -563,6 +736,7 @@ export default function TranscriptLibrary() {
                   {bulkDownload.message}
                 </p>
               )}
+              {viewMode === 'cards' ? (
               <div className="video-grid">
                 {visibleVideos.map((v) => (
                   <div key={v.youtubeVideoId} className="transcript-library-grid-item">
@@ -601,9 +775,16 @@ export default function TranscriptLibrary() {
                           {multiChannelView && v.channel?.title ? ` · ${v.channel.title}` : ''}
                           {isSearching && v.matchSource ? ` · Match: ${v.matchSource}` : ''}
                         </p>
-                        {hasSummary(v) && (
+                        {(hasSummary(v) || hasStructuredSummary(v)) && (
                           <div className="transcript-library-card-badges">
-                            <span className="transcript-library-badge">Summarized</span>
+                            {hasSummary(v) && (
+                              <span className="transcript-library-badge">Summarized</span>
+                            )}
+                            {hasStructuredSummary(v) && (
+                              <span className="transcript-library-badge transcript-library-badge-structured">
+                                Structured
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -611,6 +792,58 @@ export default function TranscriptLibrary() {
                   </div>
                 ))}
               </div>
+              ) : (
+              <div className="transcript-library-table-wrap">
+                <table className="transcript-library-table">
+                  <thead>
+                    <tr>
+                      <th className="transcript-library-table-check" scope="col">
+                        <span className="visually-hidden">Select</span>
+                      </th>
+                      <th scope="col">YT Channel</th>
+                      <th scope="col">Title</th>
+                      <th scope="col">Product Name</th>
+                      <th scope="col">Niche</th>
+                      <th scope="col">Length</th>
+                      <th scope="col">Structured Summary</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleVideos.map((v) => (
+                      <tr
+                        key={v.youtubeVideoId}
+                        className="transcript-library-table-row"
+                        onClick={() => setModalVideo(v)}
+                      >
+                        <td className="transcript-library-table-check">
+                          <input
+                            type="checkbox"
+                            checked={selectedVideoIds.has(v.youtubeVideoId)}
+                            onChange={() => toggleVideoSelection(v.youtubeVideoId)}
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label={`Select ${v.title}`}
+                          />
+                        </td>
+                        <td>{displayCell(v.channel?.title)}</td>
+                        <td className="transcript-library-table-title" title={v.title}>
+                          {v.title}
+                        </td>
+                        <td>{displayCell(v.productName)}</td>
+                        <td>{displayCell(v.niche)}</td>
+                        <td>{formatDuration(v.durationSeconds)}</td>
+                        <td>
+                          {hasStructuredSummary(v) ? (
+                            <span className="transcript-library-table-yes">Yes</span>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              )}
             </>
           )}
         </section>
@@ -620,6 +853,7 @@ export default function TranscriptLibrary() {
         video={modalVideo}
         onClose={() => setModalVideo(null)}
         onSummarySaved={handleSummarySaved}
+        structuredSummaryNavigation={structuredSummaryNav}
       />
     </div>
   );

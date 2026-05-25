@@ -30,10 +30,9 @@
 
 .App-main {
   flex: 1;
-  padding: 2rem 1rem;
-  max-width: 1200px;
-  margin: 0 auto;
+  padding: 2rem clamp(1rem, 2.5vw, 2.5rem);
   width: 100%;
+  box-sizing: border-box;
 }
 
 .search-container {

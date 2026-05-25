@@ -152,3 +152,15 @@ export async function summarizeTranscript(transcript, mode, youtubeVideoId = '')
     model: typeof data.model === 'string' ? data.model : ''
   };
 }
+
+export async function importStructuredSummaries(youtubeChannelId, items) {
+  const res = await fetch(
+    `/api/channels/${encodeURIComponent(youtubeChannelId)}/import-structured-summaries`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items })
+    }
+  );
+  return parseJsonResponse(res, 'Structured summary import failed');
+}

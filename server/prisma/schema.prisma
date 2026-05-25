@@ -43,6 +43,13 @@ model Video {
   /** OpenRouter long summary text */
   sumLong           String?
   sumLongModel      String?
+  /** Full structured summary JSON imported from external tool */
+  structuredSummaryJson         String?
+  /** Denormalized from structured summary product_name */
+  productName                   String?
+  /** Denormalized from structured summary marketing.growth_type */
+  niche                         String?
+  structuredSummaryImportedAt   DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   channel           Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)

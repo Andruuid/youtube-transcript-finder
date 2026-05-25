@@ -19,6 +19,7 @@ import {
   persistChannelThumbnail,
   toThumbnailBuffer
 } from './src/services/channelThumbnailService.js';
+import { importStructuredSummaries } from './src/services/structuredSummaryImportService.js';
 
 const PORT = Number(
   process.env.TRANSCRIPT_SERVER_PORT || process.env.PORT || 3222
@@ -268,6 +269,36 @@ app.get('/api/channels/:youtubeChannelId/videos', async (req, res) => {
   ]);
 
   return res.json({ total, items });
+});
+
+app.post('/api/channels/:youtubeChannelId/import-structured-summaries', async (req, res) => {
+  const youtubeChannelId = String(req.params.youtubeChannelId || '').trim();
+  if (!youtubeChannelId) {
+    return res.status(400).json({ error: 'Missing channel id' });
+  }
+
+  const rawItems = req.body?.items;
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    return res.status(400).json({ error: 'items must be a non-empty array' });
+  }
+
+  const items = rawItems.map((item, index) => {
+    const filename = String(item?.filename || `item-${index + 1}.json`).trim();
+    const data = item?.data;
+    return { filename, data };
+  });
+
+  try {
+    const result = await importStructuredSummaries({ youtubeChannelId, items });
+    return res.json(result);
+  } catch (error) {
+    if (error?.message === 'Channel not found') {
+      return res.status(404).json({ error: error.message });
+    }
+    return res.status(500).json({
+      error: error?.message || 'Structured summary import failed'
+    });
+  }
 });
 
 app.post('/api/videos/backfill-durations', async (req, res) => {
