@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import './App.css';
 import AppNav, { viewSubtitle } from './components/AppNav';
-import AudioDownload from './components/AudioDownload';
 import ChannelMonitor from './components/ChannelMonitor';
 import TranscriptLibrary from './components/TranscriptLibrary';
 import {
@@ -231,8 +230,6 @@ Input:\n` +
           <ChannelMonitor />
         ) : activeTab === 'library' ? (
           <TranscriptLibrary />
-        ) : activeTab === 'audio' ? (
-          <AudioDownload />
         ) : (
           <>
         <div className="search-container">

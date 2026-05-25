@@ -4,8 +4,7 @@ import './AppNav.css';
 export const APP_VIEWS = [
   { id: 'channels', label: 'Channel monitor' },
   { id: 'library', label: 'Transcript library' },
-  { id: 'search', label: 'Search' },
-  { id: 'audio', label: 'Audio download' }
+  { id: 'search', label: 'Search' }
 ];
 
 export function viewSubtitle(viewId) {
@@ -16,8 +15,6 @@ export function viewSubtitle(viewId) {
       return 'Persistent channel library with downloaded transcript tracking';
     case 'library':
       return 'Browse downloaded transcripts by channel';
-    case 'audio':
-      return 'Download a YouTube video as MP3 audio (server uses yt-dlp)';
     default:
       return '';
   }

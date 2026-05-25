@@ -1,5 +1,4 @@
 import express from 'express';
-import { registerAudioDownload } from './audioDownload.js';
 import { prisma } from './src/db/prismaClient.js';
 import {
   fetchChannelVideos,
@@ -28,7 +27,6 @@ const app = express();
 
 /** Large transcripts are POSTed to /api/summarize-transcript; keep one generous limit. */
 app.use(express.json({ limit: '5mb' }));
-registerAudioDownload(app);
 const youtubeApiKey = String(process.env.YOUTUBE_API_KEY || '').trim();
 if (!youtubeApiKey) {
   console.warn('[startup] Missing YOUTUBE_API_KEY; channel sync/import will fail until set in server/.env.');
