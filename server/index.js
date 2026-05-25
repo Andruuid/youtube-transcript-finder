@@ -28,8 +28,13 @@ const app = express();
 /** Large transcripts are POSTed to /api/summarize-transcript; keep one generous limit. */
 app.use(express.json({ limit: '5mb' }));
 registerAudioDownload(app);
-if (!String(process.env.YOUTUBE_API_KEY || '').trim()) {
-  console.warn('[startup] Missing YOUTUBE_API_KEY; channel sync endpoints will fail until set.');
+const youtubeApiKey = String(process.env.YOUTUBE_API_KEY || '').trim();
+if (!youtubeApiKey) {
+  console.warn('[startup] Missing YOUTUBE_API_KEY; channel sync/import will fail until set in server/.env.');
+} else if (youtubeApiKey === 'your_youtube_data_api_key') {
+  console.warn(
+    '[startup] YOUTUBE_API_KEY is still the placeholder in server/.env. Channel import/sync will fail until you set a real YouTube Data API v3 key and restart.'
+  );
 }
 
 app.get('/transcript/:videoId', async (req, res) => {

@@ -1,9 +1,22 @@
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 
+const PLACEHOLDER_YOUTUBE_API_KEYS = new Set([
+  'your_youtube_data_api_key',
+  'your-api-key-here',
+  'changeme'
+]);
+
 function getYouTubeApiKey() {
   const apiKey = String(process.env.YOUTUBE_API_KEY || '').trim();
   if (!apiKey) {
-    throw new Error('Missing YOUTUBE_API_KEY environment variable');
+    throw new Error(
+      'Missing YOUTUBE_API_KEY. Set a YouTube Data API v3 key in server/.env and restart the transcript server.'
+    );
+  }
+  if (PLACEHOLDER_YOUTUBE_API_KEYS.has(apiKey.toLowerCase())) {
+    throw new Error(
+      'YOUTUBE_API_KEY is still the placeholder in server/.env. Replace it with a real YouTube Data API v3 key from Google Cloud Console, then restart npm run dev:full.'
+    );
   }
   return apiKey;
 }
