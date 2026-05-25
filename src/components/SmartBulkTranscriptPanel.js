@@ -68,8 +68,8 @@ export default function SmartBulkTranscriptPanel({
       <p className="channel-smart-bulk-help">
         Loads up to your target count of <strong>newest</strong> videos from YouTube using sequential
         pages (50 per API call). Then downloads transcripts only for rows that do not have one yet—so
-        if 100 of 200 are already saved, only the remaining 100 are fetched. Uses the focused channel
-        row (not every checkbox).
+        if 100 of 200 are already saved, only the remaining 100 are fetched. Runs on the channel you
+        focus in the sidebar (click the channel name; checking the box also focuses that row).
       </p>
       <div className="channel-smart-bulk-row">
         <label className="channel-smart-bulk-label" htmlFor="smart-bulk-target">

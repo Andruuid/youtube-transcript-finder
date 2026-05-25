@@ -15,7 +15,7 @@ import {
   reconcileSelectedChannelIds,
   writeStoredFocusedChannelId,
   writeStoredSelectedChannelIds
-} from '../utils/transcriptLibraryStorage';
+} from '../utils/channelSelectionStorage';
 
 function hasSummary(video) {
   return !!(video.sumShort?.trim() || video.sumLong?.trim());

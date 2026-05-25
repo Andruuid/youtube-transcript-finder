@@ -16,6 +16,14 @@ import {
   searchLibrary,
   syncChannel
 } from '../services/libraryService';
+import {
+  hasStoredSelectedChannelIds,
+  readStoredFocusedChannelId,
+  readStoredSelectedChannelIds,
+  reconcileSelectedChannelIds,
+  writeStoredFocusedChannelId,
+  writeStoredSelectedChannelIds
+} from '../utils/channelSelectionStorage';
 
 function sanitizeFilePart(value, fallback = 'untitled') {
   const noIllegalChars = String(value || '').replace(/[<>:"/\\|?*]/g, '');
@@ -109,8 +117,11 @@ export default function ChannelMonitor() {
   const [downloadingVideoId, setDownloadingVideoId] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedChannelId, setSelectedChannelId] = useState('');
-  const [selectedChannelIds, setSelectedChannelIds] = useState(() => new Set());
+  const [selectedChannelId, setSelectedChannelId] = useState(() => readStoredFocusedChannelId());
+  const [selectedChannelIds, setSelectedChannelIds] = useState(
+    () => readStoredSelectedChannelIds() ?? new Set()
+  );
+  const persistSelectionRef = useRef(false);
   const [videos, setVideos] = useState([]);
   /** Default range: last 7 days through end of today (local). */
   const [publishedFrom, setPublishedFrom] = useState(() =>
@@ -180,23 +191,28 @@ export default function ChannelMonitor() {
     try {
       const loaded = await listChannels();
       setChannels(loaded);
+      const availableIds = loaded.map((c) => c.youtubeChannelId);
       setSelectedChannelIds((prev) => {
-        if (prev.size === 0 && loaded.length > 0) {
-          return new Set(loaded.map((c) => c.youtubeChannelId));
+        const reconciled = reconcileSelectedChannelIds(prev, availableIds);
+        if (reconciled.size === 0 && loaded.length > 0 && !hasStoredSelectedChannelIds()) {
+          return new Set(availableIds);
         }
-        const next = new Set();
-        for (const c of loaded) {
-          if (prev.has(c.youtubeChannelId)) next.add(c.youtubeChannelId);
-        }
-        if (next.size === 0 && loaded.length > 0) {
-          return new Set(loaded.map((c) => c.youtubeChannelId));
-        }
-        return next;
+        return reconciled;
       });
-      setSelectedChannelId((prev) => prev || loaded[0]?.youtubeChannelId || '');
+      setSelectedChannelId((prev) => {
+        if (prev && loaded.some((c) => c.youtubeChannelId === prev)) {
+          return prev;
+        }
+        const storedFocused = readStoredFocusedChannelId();
+        if (storedFocused && loaded.some((c) => c.youtubeChannelId === storedFocused)) {
+          return storedFocused;
+        }
+        return loaded[0]?.youtubeChannelId || '';
+      });
     } catch (e) {
       setError(e.message || 'Failed to load channels');
     } finally {
+      persistSelectionRef.current = true;
       setLoading(false);
     }
   }, []);
@@ -204,6 +220,16 @@ export default function ChannelMonitor() {
   useEffect(() => {
     loadChannels();
   }, [loadChannels]);
+
+  useEffect(() => {
+    if (!persistSelectionRef.current) return;
+    writeStoredSelectedChannelIds(selectedChannelIds);
+  }, [selectedChannelIds]);
+
+  useEffect(() => {
+    if (!persistSelectionRef.current) return;
+    writeStoredFocusedChannelId(selectedChannelId);
+  }, [selectedChannelId]);
 
   /** Load merged video rows for checked channels (no loading UI); used after YouTube sync inside bulk actions. */
   const fetchMergedVideosSnapshot = useCallback(async () => {
@@ -253,7 +279,10 @@ export default function ChannelMonitor() {
     setSelectedChannelIds((prev) => {
       const next = new Set(prev);
       if (next.has(youtubeChannelId)) next.delete(youtubeChannelId);
-      else next.add(youtubeChannelId);
+      else {
+        next.add(youtubeChannelId);
+        setSelectedChannelId(youtubeChannelId);
+      }
       return next;
     });
   };
@@ -720,7 +749,15 @@ export default function ChannelMonitor() {
                     <button
                       type="button"
                       className="channel-saved-row-button"
-                      onClick={() => setSelectedChannelId(c.youtubeChannelId)}
+                      onClick={() => {
+                        setSelectedChannelId(c.youtubeChannelId);
+                        setSelectedChannelIds((prev) => {
+                          if (prev.has(c.youtubeChannelId)) return prev;
+                          const next = new Set(prev);
+                          next.add(c.youtubeChannelId);
+                          return next;
+                        });
+                      }}
                     >
                       {c.thumbnailUrl ? (
                         <ChannelAvatar
@@ -800,13 +837,9 @@ export default function ChannelMonitor() {
             </button>
           </div>
           <SmartBulkTranscriptPanel
-            youtubeChannelId={
-              selectedChannelId && selectedChannelIds.has(selectedChannelId)
-                ? selectedChannelId
-                : ''
-            }
+            youtubeChannelId={selectedChannelId || ''}
             channelTitle={focusedChannel?.title || ''}
-            disabled={videoPanelDisabled}
+            disabled={channels.length === 0 || !selectedChannelId}
             otherBulkBusy={bulkDownload.loading}
             onBusyChange={setSmartBulkBusy}
             onFinished={async () => {
