@@ -112,6 +112,16 @@ export async function searchLibrary(query, channelIdOrOptions = '') {
   return data.items || [];
 }
 
+/** Fetches video lengths from YouTube metadata for rows missing durationSeconds. */
+export async function backfillVideoDurations(channelIds = []) {
+  const res = await fetch('/api/videos/backfill-durations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channelIds })
+  });
+  return parseJsonResponse(res, 'Failed to backfill video durations');
+}
+
 /** Loads transcript text (prefers DB when already downloaded). */
 export async function fetchTranscriptText(videoId) {
   const res = await fetch(`/transcript/${encodeURIComponent(videoId)}`);

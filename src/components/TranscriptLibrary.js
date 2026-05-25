@@ -1,12 +1,21 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TranscriptReaderModal from './TranscriptReaderModal';
 import ChannelAvatar from './ChannelAvatar';
 import './TranscriptLibrary.css';
 import {
+  backfillVideoDurations,
   listAllChannelVideos,
   listChannels,
   searchLibrary
 } from '../services/libraryService';
+import {
+  hasStoredSelectedChannelIds,
+  readStoredFocusedChannelId,
+  readStoredSelectedChannelIds,
+  reconcileSelectedChannelIds,
+  writeStoredFocusedChannelId,
+  writeStoredSelectedChannelIds
+} from '../utils/transcriptLibraryStorage';
 
 function hasSummary(video) {
   return !!(video.sumShort?.trim() || video.sumLong?.trim());
@@ -40,15 +49,19 @@ function formatDuration(seconds) {
 
 export default function TranscriptLibrary() {
   const [channels, setChannels] = useState([]);
-  const [selectedChannelId, setSelectedChannelId] = useState('');
-  const [selectedChannelIds, setSelectedChannelIds] = useState(() => new Set());
+  const [selectedChannelId, setSelectedChannelId] = useState(() => readStoredFocusedChannelId());
+  const [selectedChannelIds, setSelectedChannelIds] = useState(
+    () => readStoredSelectedChannelIds() ?? new Set()
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [minMinutes, setMinMinutes] = useState(0);
   const [videos, setVideos] = useState([]);
+  const [backfillingDurations, setBackfillingDurations] = useState(false);
   const [loadingChannels, setLoadingChannels] = useState(true);
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [error, setError] = useState('');
   const [modalVideo, setModalVideo] = useState(null);
+  const persistSelectionRef = useRef(false);
 
   const channelsWithTranscripts = useMemo(
     () => channels.filter((c) => c.downloadedCount > 0),
@@ -104,28 +117,35 @@ export default function TranscriptLibrary() {
       const loaded = await listChannels();
       setChannels(loaded);
       const withTranscripts = loaded.filter((c) => c.downloadedCount > 0);
+      const availableIds = withTranscripts.map((c) => c.youtubeChannelId);
       setSelectedChannelIds((prev) => {
-        if (prev.size === 0 && withTranscripts.length > 0) {
-          return new Set(withTranscripts.map((c) => c.youtubeChannelId));
+        const reconciled = reconcileSelectedChannelIds(prev, availableIds);
+        if (
+          reconciled.size === 0 &&
+          withTranscripts.length > 0 &&
+          !hasStoredSelectedChannelIds()
+        ) {
+          return new Set(availableIds);
         }
-        const next = new Set();
-        for (const c of withTranscripts) {
-          if (prev.has(c.youtubeChannelId)) next.add(c.youtubeChannelId);
-        }
-        if (next.size === 0 && withTranscripts.length > 0) {
-          return new Set(withTranscripts.map((c) => c.youtubeChannelId));
-        }
-        return next;
+        return reconciled;
       });
       setSelectedChannelId((prev) => {
         if (prev && withTranscripts.some((c) => c.youtubeChannelId === prev)) {
           return prev;
+        }
+        const storedFocused = readStoredFocusedChannelId();
+        if (
+          storedFocused &&
+          withTranscripts.some((c) => c.youtubeChannelId === storedFocused)
+        ) {
+          return storedFocused;
         }
         return withTranscripts[0]?.youtubeChannelId || '';
       });
     } catch (e) {
       setError(e.message || 'Failed to load channels');
     } finally {
+      persistSelectionRef.current = true;
       setLoadingChannels(false);
     }
   }, []);
@@ -133,6 +153,16 @@ export default function TranscriptLibrary() {
   useEffect(() => {
     loadChannels();
   }, [loadChannels]);
+
+  useEffect(() => {
+    if (!persistSelectionRef.current) return;
+    writeStoredSelectedChannelIds(selectedChannelIds);
+  }, [selectedChannelIds]);
+
+  useEffect(() => {
+    if (!persistSelectionRef.current) return;
+    writeStoredFocusedChannelId(selectedChannelId);
+  }, [selectedChannelId]);
 
   const refreshVideos = useCallback(async () => {
     const ids = channelsWithTranscripts
@@ -148,20 +178,35 @@ export default function TranscriptLibrary() {
     setError('');
     setModalVideo(null);
 
-    try {
+    const loadVideos = async () => {
       const trimmed = searchQuery.trim();
       if (trimmed) {
         const results = await searchLibrary(trimmed, {
           channelIds: ids,
           downloadedOnly: true
         });
-        setVideos(mergeVideosById(results));
-      } else {
-        const batches = await Promise.all(
-          ids.map((id) => listAllChannelVideos(id, 'downloaded'))
-        );
-        setVideos(mergeVideosById(batches.flat()));
+        return mergeVideosById(results);
       }
+      const batches = await Promise.all(
+        ids.map((id) => listAllChannelVideos(id, 'downloaded'))
+      );
+      return mergeVideosById(batches.flat());
+    };
+
+    try {
+      let loaded = await loadVideos();
+      if (loaded.some((v) => v.durationSeconds == null)) {
+        setBackfillingDurations(true);
+        try {
+          await backfillVideoDurations(ids);
+          loaded = await loadVideos();
+        } catch (backfillError) {
+          console.warn('[TranscriptLibrary] duration backfill failed', backfillError);
+        } finally {
+          setBackfillingDurations(false);
+        }
+      }
+      setVideos(loaded);
     } catch (e) {
       setError(e.message || 'Failed to load transcripts');
     } finally {
@@ -243,8 +288,10 @@ export default function TranscriptLibrary() {
         <p className="transcript-library-search-hint">
           Matches titles first, then description and transcript text. Use channel checkboxes to
           search one or many channels. Set min. length to filter out Shorts and shorter videos
-          {hasDurationFilter && unknownDurationCount > 0
-            ? ` (${unknownDurationCount} hidden without duration — re-sync channel to update).`
+          {backfillingDurations
+            ? ' (fetching video lengths from YouTube…).'
+            : hasDurationFilter && unknownDurationCount > 0
+            ? ` (${unknownDurationCount} still missing length metadata).`
             : '.'}
         </p>
       </div>

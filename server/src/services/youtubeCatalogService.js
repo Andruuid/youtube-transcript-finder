@@ -80,6 +80,33 @@ export function iso8601DurationToSeconds(iso) {
   return Math.round(h * 3600 + m * 60 + s);
 }
 
+function chunkArray(arr, size) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/** Batch YouTube videos.list for contentDetails.duration only. */
+export async function fetchVideoDurationsByIds(youtubeVideoIds) {
+  const ids = [...new Set((youtubeVideoIds || []).filter(Boolean))];
+  const durations = new Map();
+  if (!ids.length) return durations;
+
+  for (const batch of chunkArray(ids, 50)) {
+    const data = await fetchYouTube('videos', {
+      part: 'contentDetails',
+      id: batch.join(',')
+    });
+    for (const video of data.items || []) {
+      const sec = iso8601DurationToSeconds(video.contentDetails?.duration);
+      if (sec > 0) durations.set(video.id, sec);
+    }
+  }
+  return durations;
+}
+
 export async function resolveChannel(rawInput) {
   const parsed = parseChannelInput(rawInput);
   const params =

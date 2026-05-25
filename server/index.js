@@ -11,6 +11,7 @@ import {
   fetchTranscriptText
 } from './src/services/transcriptService.js';
 import { searchLibrary } from './src/services/librarySearchService.js';
+import { backfillMissingVideoDurations } from './src/services/videoDurationService.js';
 import { summarizeTranscriptViaOpenRouter } from './src/services/transcriptSummarizeService.js';
 import {
   backfillMissingChannelThumbnails,
@@ -269,6 +270,25 @@ app.get('/api/channels/:youtubeChannelId/videos', async (req, res) => {
   ]);
 
   return res.json({ total, items });
+});
+
+app.post('/api/videos/backfill-durations', async (req, res) => {
+  const raw = req.body?.channelIds;
+  const youtubeChannelIds = Array.isArray(raw)
+    ? raw.map(String).map((id) => id.trim()).filter(Boolean)
+    : String(raw || '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+
+  try {
+    const result = await backfillMissingVideoDurations({
+      youtubeChannelIds: youtubeChannelIds.length ? youtubeChannelIds : undefined
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Duration backfill failed' });
+  }
 });
 
 app.post('/api/videos/:youtubeVideoId/download-transcript', async (req, res) => {
