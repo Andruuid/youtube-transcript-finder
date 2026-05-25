@@ -264,6 +264,7 @@ export default function TranscriptReaderModal({
   const [summarizeVariant, setSummarizeVariant] = useState(null);
   const [contentView, setContentView] = useState('transcript');
   const [ideaPopoverOpen, setIdeaPopoverOpen] = useState(false);
+  const [ideaQuickOpen, setIdeaQuickOpen] = useState(false);
   const [savedIdea, setSavedIdea] = useState(null);
   const [ideaLoading, setIdeaLoading] = useState(false);
   const [ideaSaving, setIdeaSaving] = useState(false);
@@ -322,6 +323,7 @@ export default function TranscriptReaderModal({
     if (!video?.youtubeVideoId || !showStructured) {
       setSavedIdea(null);
       setIdeaPopoverOpen(false);
+      setIdeaQuickOpen(false);
       return undefined;
     }
 
@@ -359,6 +361,7 @@ export default function TranscriptReaderModal({
         });
         setSavedIdea(idea);
         setIdeaPopoverOpen(false);
+        setIdeaQuickOpen(false);
       } catch (e) {
         setIdeaSaveError(e.message || 'Failed to save idea');
       } finally {
@@ -431,6 +434,7 @@ export default function TranscriptReaderModal({
         if (ideaPopoverOpen) {
           e.stopPropagation();
           setIdeaPopoverOpen(false);
+          setIdeaQuickOpen(false);
           setIdeaSaveError('');
           return;
         }
@@ -438,29 +442,41 @@ export default function TranscriptReaderModal({
         return;
       }
 
-      if (
-        contentView !== 'structured' ||
-        !structuredSummaryNavigation?.canNavigate
-      ) {
-        return;
-      }
-
       const tag = e.target?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) {
-        return;
-      }
+      const inEditable =
+        tag === 'input' || tag === 'textarea' || e.target?.isContentEditable;
 
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        structuredSummaryNavigation.onPrev();
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        structuredSummaryNavigation.onNext();
+      if (contentView === 'structured' && showStructured && !inEditable) {
+        if (e.key === 'ArrowUp' && !ideaPopoverOpen && !ideaLoading) {
+          e.preventDefault();
+          setIdeaSaveError('');
+          setIdeaQuickOpen(true);
+          setIdeaPopoverOpen(true);
+          return;
+        }
+
+        if (structuredSummaryNavigation?.canNavigate) {
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            structuredSummaryNavigation.onPrev();
+          } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            structuredSummaryNavigation.onNext();
+          }
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [video, onClose, contentView, structuredSummaryNavigation, ideaPopoverOpen]);
+  }, [
+    video,
+    onClose,
+    contentView,
+    showStructured,
+    structuredSummaryNavigation,
+    ideaPopoverOpen,
+    ideaLoading
+  ]);
 
   if (!video) return null;
 
@@ -560,11 +576,16 @@ export default function TranscriptReaderModal({
                   }
                   onClick={() => {
                     setIdeaSaveError('');
+                    setIdeaQuickOpen(false);
                     setIdeaPopoverOpen((open) => !open);
                   }}
                   disabled={ideaLoading}
                   aria-label={savedIdea ? 'Edit saved idea' : 'Save as idea'}
-                  title={savedIdea ? 'Edit saved idea' : 'Save as idea'}
+                  title={
+                    savedIdea
+                      ? 'Edit saved idea'
+                      : 'Save as idea (↑ in structured summary)'
+                  }
                 >
                   ★
                 </button>
@@ -574,11 +595,13 @@ export default function TranscriptReaderModal({
                     outsideClickRef={ideaStarRef}
                     channelTitle={video.channel?.title || 'Channel'}
                     videoTitle={video.title}
-                    initialStars={savedIdea?.stars || 0}
+                    initialStars={ideaQuickOpen ? 1 : savedIdea?.stars || 0}
                     initialComment={savedIdea?.comment || ''}
+                    autoFocusComment={ideaQuickOpen}
                     onSave={handleIdeaSave}
                     onCancel={() => {
                       setIdeaPopoverOpen(false);
+                      setIdeaQuickOpen(false);
                       setIdeaSaveError('');
                     }}
                     saving={ideaSaving}

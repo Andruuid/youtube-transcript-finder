@@ -57,13 +57,15 @@ export default function IdeaFormPopover({
   onCancel,
   saving = false,
   error = '',
-  outsideClickRef = null
+  outsideClickRef = null,
+  autoFocusComment = false
 }) {
   const [channelTitle, setChannelTitle] = useState(initialChannelTitle);
   const [videoTitle, setVideoTitle] = useState(initialVideoTitle);
   const [stars, setStars] = useState(initialStars);
   const [comment, setComment] = useState(initialComment);
   const panelRef = useRef(null);
+  const commentRef = useRef(null);
 
   useEffect(() => {
     setChannelTitle(initialChannelTitle);
@@ -71,6 +73,14 @@ export default function IdeaFormPopover({
     setStars(initialStars);
     setComment(initialComment);
   }, [initialChannelTitle, initialVideoTitle, initialStars, initialComment]);
+
+  useEffect(() => {
+    if (!autoFocusComment) return undefined;
+    const id = window.requestAnimationFrame(() => {
+      commentRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [autoFocusComment]);
 
   useEffect(() => {
     if (mode !== 'popover') return undefined;
@@ -108,6 +118,13 @@ export default function IdeaFormPopover({
       stars,
       comment: comment.trim()
     });
+  };
+
+  const handleCommentKeyDown = (e) => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    e.preventDefault();
+    if (saving || !canSave) return;
+    panelRef.current?.requestSubmit();
   };
 
   const form = (
@@ -172,9 +189,11 @@ export default function IdeaFormPopover({
       <label className="idea-form-popover-field">
         <span className="idea-form-popover-label">Comment (optional)</span>
         <textarea
+          ref={commentRef}
           className="idea-form-popover-textarea"
           value={comment}
           onChange={(e) => setComment(e.target.value)}
+          onKeyDown={handleCommentKeyDown}
           placeholder="Why is this interesting?"
           rows={3}
         />
