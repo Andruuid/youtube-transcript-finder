@@ -124,9 +124,6 @@
 }
 
 .transcript-library-channel-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.45rem;
   border-bottom: 1px solid #eee;
 }
 
@@ -148,21 +145,11 @@
   height: 1rem;
 }
 
-.transcript-library-channel-checkbox {
-  margin-top: 0.75rem;
-  flex-shrink: 0;
-}
-
-.transcript-library-channel-checkbox input {
-  width: 1rem;
-  height: 1rem;
-}
-
-.transcript-library-channel-button {
+.transcript-library-channel-row {
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  flex: 1;
+  width: 100%;
   min-width: 0;
   padding: 0.65rem 0.35rem;
   margin: 0;
@@ -175,15 +162,22 @@
   border-radius: 6px;
 }
 
-.transcript-library-channel-button:hover {
+.transcript-library-channel-checkbox-input {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.transcript-library-channel-row:hover {
   background: #f8f9fa;
 }
 
-.transcript-library-channel-button.is-active {
+.transcript-library-channel-row.is-active {
   background: #e8f0fe;
 }
 
-.transcript-library-channel-button.is-active .transcript-library-channel-title {
+.transcript-library-channel-row.is-active .transcript-library-channel-title {
   color: #1a73e8;
 }
 
@@ -277,4 +271,81 @@
   margin: 0.2rem 0 0;
   color: #777;
   font-size: 0.85rem;
+}
+
+.transcript-library-video-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 1rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid #eee;
+}
+
+.transcript-library-video-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #444;
+  font-weight: 500;
+}
+
+.transcript-library-video-select-all input {
+  width: 1rem;
+  height: 1rem;
+}
+
+.transcript-library-download-button {
+  min-width: 10.5rem;
+  margin-left: auto;
+}
+
+.transcript-library-bulk-status {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.transcript-library-bulk-success {
+  color: #137333;
+  background: #e6f4ea;
+  border-radius: 4px;
+  padding: 0.7rem 0.8rem;
+}
+
+.transcript-library-bulk-partial {
+  color: #802700;
+  background: #ffeacc;
+  border-radius: 4px;
+  padding: 0.7rem 0.8rem;
+}
+
+.transcript-library-grid-item {
+  position: relative;
+}
+
+.transcript-library-card-checkbox {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.55rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.transcript-library-card-checkbox input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  cursor: pointer;
 }

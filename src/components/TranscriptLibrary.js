@@ -4,16 +4,16 @@ import ChannelAvatar from './ChannelAvatar';
 import './TranscriptLibrary.css';
 import {
   backfillVideoDurations,
+  downloadTranscript,
+  fetchTranscriptText,
   listAllChannelVideos,
   listChannels,
   searchLibrary
 } from '../services/libraryService';
 import {
   hasStoredSelectedChannelIds,
-  readStoredFocusedChannelId,
   readStoredSelectedChannelIds,
   reconcileSelectedChannelIds,
-  writeStoredFocusedChannelId,
   writeStoredSelectedChannelIds
 } from '../utils/channelSelectionStorage';
 
@@ -47,9 +47,20 @@ function formatDuration(seconds) {
   return `${m} min`;
 }
 
+function sanitizeFilePart(value, fallback = 'untitled') {
+  const noIllegalChars = String(value || '').replace(/[<>:"/\\|?*]/g, '');
+  const printableOnly = Array.from(noIllegalChars)
+    .filter((ch) => ch.charCodeAt(0) >= 32)
+    .join('');
+  const cleaned = printableOnly
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 110);
+  return cleaned || fallback;
+}
+
 export default function TranscriptLibrary() {
   const [channels, setChannels] = useState([]);
-  const [selectedChannelId, setSelectedChannelId] = useState(() => readStoredFocusedChannelId());
   const [selectedChannelIds, setSelectedChannelIds] = useState(
     () => readStoredSelectedChannelIds() ?? new Set()
   );
@@ -61,6 +72,13 @@ export default function TranscriptLibrary() {
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [error, setError] = useState('');
   const [modalVideo, setModalVideo] = useState(null);
+  const [selectedVideoIds, setSelectedVideoIds] = useState(() => new Set());
+  const [bulkDownload, setBulkDownload] = useState({
+    loading: false,
+    message: '',
+    error: '',
+    partialFailures: false
+  });
   const persistSelectionRef = useRef(false);
 
   const channelsWithTranscripts = useMemo(
@@ -71,11 +89,6 @@ export default function TranscriptLibrary() {
   const selectedChannels = useMemo(
     () => channelsWithTranscripts.filter((c) => selectedChannelIds.has(c.youtubeChannelId)),
     [channelsWithTranscripts, selectedChannelIds]
-  );
-
-  const focusedChannel = useMemo(
-    () => channelsWithTranscripts.find((c) => c.youtubeChannelId === selectedChannelId),
-    [channelsWithTranscripts, selectedChannelId]
   );
 
   const allChannelsSelected =
@@ -105,10 +118,10 @@ export default function TranscriptLibrary() {
         ? `Search: ${selectedChannels[0].title}`
         : 'Search results';
     }
-    if (focusedChannel) return focusedChannel.title;
+    if (selectedChannels.length === 1) return selectedChannels[0].title;
     if (selectedChannels.length > 1) return `Transcripts (${selectedChannels.length} channels)`;
     return 'Transcripts';
-  }, [isSearching, focusedChannel, selectedChannels]);
+  }, [isSearching, selectedChannels]);
 
   const loadChannels = useCallback(async () => {
     setLoadingChannels(true);
@@ -129,19 +142,6 @@ export default function TranscriptLibrary() {
         }
         return reconciled;
       });
-      setSelectedChannelId((prev) => {
-        if (prev && withTranscripts.some((c) => c.youtubeChannelId === prev)) {
-          return prev;
-        }
-        const storedFocused = readStoredFocusedChannelId();
-        if (
-          storedFocused &&
-          withTranscripts.some((c) => c.youtubeChannelId === storedFocused)
-        ) {
-          return storedFocused;
-        }
-        return withTranscripts[0]?.youtubeChannelId || '';
-      });
     } catch (e) {
       setError(e.message || 'Failed to load channels');
     } finally {
@@ -158,11 +158,6 @@ export default function TranscriptLibrary() {
     if (!persistSelectionRef.current) return;
     writeStoredSelectedChannelIds(selectedChannelIds);
   }, [selectedChannelIds]);
-
-  useEffect(() => {
-    if (!persistSelectionRef.current) return;
-    writeStoredFocusedChannelId(selectedChannelId);
-  }, [selectedChannelId]);
 
   const refreshVideos = useCallback(async () => {
     const ids = channelsWithTranscripts
@@ -235,16 +230,150 @@ export default function TranscriptLibrary() {
     });
   };
 
-  const handleChannelFocus = (youtubeChannelId) => {
-    setSelectedChannelId(youtubeChannelId);
-  };
-
   const handleSummarySaved = useCallback((videoId, patch) => {
     setModalVideo((pv) => (pv ? { ...pv, ...patch } : pv));
     setVideos((list) =>
       list.map((x) => (x.youtubeVideoId === videoId ? { ...x, ...patch } : x))
     );
   }, []);
+
+  const toggleVideoSelection = (videoId) => {
+    setSelectedVideoIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(videoId)) next.delete(videoId);
+      else next.add(videoId);
+      return next;
+    });
+  };
+
+  const selectedVisibleCount = useMemo(
+    () =>
+      visibleVideos.filter((v) => selectedVideoIds.has(v.youtubeVideoId)).length,
+    [visibleVideos, selectedVideoIds]
+  );
+
+  const allVisibleSelected =
+    visibleVideos.length > 0 && selectedVisibleCount === visibleVideos.length;
+
+  const toggleAllVideoSelections = () => {
+    const visibleIds = visibleVideos.map((v) => v.youtubeVideoId);
+    setSelectedVideoIds((prev) => {
+      const everyChecked =
+        visibleIds.length > 0 && visibleIds.every((id) => prev.has(id));
+      const next = new Set(prev);
+      if (everyChecked) {
+        for (const id of visibleIds) next.delete(id);
+      } else {
+        for (const id of visibleIds) next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleDownloadTranscripts = async () => {
+    const selectedVideos = visibleVideos.filter((v) =>
+      selectedVideoIds.has(v.youtubeVideoId)
+    );
+    if (selectedVideos.length === 0) return;
+
+    setBulkDownload({
+      loading: true,
+      message: `Downloading ${selectedVideos.length} transcript(s)…`,
+      error: '',
+      partialFailures: false
+    });
+    setError('');
+
+    try {
+      const canPickFolder = typeof window.showDirectoryPicker === 'function';
+
+      let baseDir = null;
+      if (canPickFolder) {
+        baseDir = await window.showDirectoryPicker({ mode: 'readwrite' });
+      }
+
+      const folderByChannel = new Map();
+      let savedCount = 0;
+      let dbOkCount = 0;
+      const failures = [];
+
+      for (const video of selectedVideos) {
+        try {
+          let text =
+            video.hasTranscript &&
+            typeof video.transcriptText === 'string' &&
+            video.transcriptText.length > 0
+              ? video.transcriptText
+              : null;
+          if (!text && video.hasTranscript) {
+            const { transcript } = await fetchTranscriptText(video.youtubeVideoId);
+            text = transcript;
+          } else if (!text) {
+            const data = await downloadTranscript(video.youtubeVideoId);
+            text = data.transcript;
+          }
+          if (typeof text !== 'string' || !text) {
+            throw new Error('Server returned no transcript text');
+          }
+
+          dbOkCount += 1;
+
+          if (baseDir) {
+            const channelFolderName = sanitizeFilePart(
+              video.channel?.title || 'unknown-channel'
+            );
+            let channelFolder = folderByChannel.get(channelFolderName);
+            if (!channelFolder) {
+              channelFolder = await baseDir.getDirectoryHandle(channelFolderName, {
+                create: true
+              });
+              folderByChannel.set(channelFolderName, channelFolder);
+            }
+            const fileTitle = sanitizeFilePart(video.title || video.youtubeVideoId);
+            const fileName = `${fileTitle}-${video.youtubeVideoId}.txt`;
+            const fileHandle = await channelFolder.getFileHandle(fileName, {
+              create: true
+            });
+            const writable = await fileHandle.createWritable();
+            await writable.write(text);
+            await writable.close();
+            savedCount += 1;
+          }
+        } catch (err) {
+          failures.push({
+            id: video.youtubeVideoId,
+            message: err?.message || String(err)
+          });
+        }
+      }
+
+      const failNote =
+        failures.length > 0
+          ? ` ${failures.length} failed (${failures.map((f) => f.id).join(', ')}).`
+          : '';
+      const totalFail = failures.length === selectedVideos.length;
+      setBulkDownload({
+        loading: false,
+        message: totalFail
+          ? ''
+          : baseDir
+            ? `Saved ${savedCount} file(s) into ${folderByChannel.size} folder(s); ${dbOkCount} transcript(s) in the database.${failNote}`
+            : `Saved ${dbOkCount} transcript(s) to the database.${failNote}`,
+        error: totalFail ? failures.map((f) => `${f.id}: ${f.message}`).join(' ') : '',
+        partialFailures: !totalFail && failures.length > 0
+      });
+    } catch (e) {
+      const cancelled = e?.name === 'AbortError';
+      setBulkDownload({
+        loading: false,
+        message: '',
+        error: cancelled
+          ? 'Folder selection cancelled.'
+          : e.message || 'Failed to download transcripts.',
+        partialFailures: false
+      });
+    }
+  };
 
   const videoPanelDisabled = !loadingChannels && selectedChannels.length === 0;
 
@@ -286,8 +415,8 @@ export default function TranscriptLibrary() {
           </div>
         </div>
         <p className="transcript-library-search-hint">
-          Matches titles first, then description and transcript text. Use channel checkboxes to
-          search one or many channels. Set min. length to filter out Shorts and shorter videos
+          Matches titles first, then description and transcript text. Click channels to browse or
+          search one or many at once. Set min. length to filter out Shorts and shorter videos
           {backfillingDurations
             ? ' (fetching video lengths from YouTube…).'
             : hasDurationFilter && unknownDurationCount > 0
@@ -323,43 +452,40 @@ export default function TranscriptLibrary() {
                 </span>
               </label>
               <ul className="transcript-library-channel-list">
-                {channelsWithTranscripts.map((c) => (
-                  <li key={c.youtubeChannelId} className="transcript-library-channel-item">
-                    <label className="transcript-library-channel-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={selectedChannelIds.has(c.youtubeChannelId)}
-                        onChange={() => toggleChannelSelection(c.youtubeChannelId)}
-                        aria-label={`Include ${c.title} in search and list`}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className={
-                        selectedChannelId === c.youtubeChannelId
-                          ? 'transcript-library-channel-button is-active'
-                          : 'transcript-library-channel-button'
-                      }
-                      onClick={() => handleChannelFocus(c.youtubeChannelId)}
-                    >
-                      {c.thumbnailUrl ? (
-                        <ChannelAvatar
-                          src={c.thumbnailUrl}
-                          className="transcript-library-channel-thumb"
+                {channelsWithTranscripts.map((c) => {
+                  const isSelected = selectedChannelIds.has(c.youtubeChannelId);
+                  return (
+                    <li key={c.youtubeChannelId} className="transcript-library-channel-item">
+                      <label
+                        className={
+                          isSelected
+                            ? 'transcript-library-channel-row is-active'
+                            : 'transcript-library-channel-row'
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          className="transcript-library-channel-checkbox-input"
+                          checked={isSelected}
+                          onChange={() => toggleChannelSelection(c.youtubeChannelId)}
+                          aria-label={`Include ${c.title} in search and list`}
                         />
-                      ) : null}
-                      <span className="transcript-library-channel-text">
-                        <span className="transcript-library-channel-title">
-                          {c.title}
-                          {selectedChannelId === c.youtubeChannelId ? ' (focused)' : ''}
+                        {c.thumbnailUrl ? (
+                          <ChannelAvatar
+                            src={c.thumbnailUrl}
+                            className="transcript-library-channel-thumb"
+                          />
+                        ) : null}
+                        <span className="transcript-library-channel-text">
+                          <span className="transcript-library-channel-title">{c.title}</span>
+                          <span className="transcript-library-channel-meta">
+                            {c.downloadedCount} transcript{c.downloadedCount === 1 ? '' : 's'}
+                          </span>
                         </span>
-                        <span className="transcript-library-channel-meta">
-                          {c.downloadedCount} transcript{c.downloadedCount === 1 ? '' : 's'}
-                        </span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
+                      </label>
+                    </li>
+                  );
+                })}
               </ul>
             </>
           )}
@@ -383,7 +509,7 @@ export default function TranscriptLibrary() {
 
           {videoPanelDisabled && (
             <p className="transcript-library-empty">
-              Select at least one channel (checkbox) to browse or search transcripts.
+              Select at least one channel to browse or search transcripts.
             </p>
           )}
           {loadingVideos && (
@@ -399,42 +525,93 @@ export default function TranscriptLibrary() {
             </p>
           )}
           {!loadingVideos && visibleVideos.length > 0 && (
-            <div className="video-grid">
-              {visibleVideos.map((v) => (
+            <>
+              <div className="transcript-library-video-actions">
+                <label className="transcript-library-video-select-all">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleAllVideoSelections}
+                    disabled={videoPanelDisabled}
+                  />
+                  <span>
+                    Select all ({selectedVisibleCount}/{visibleVideos.length})
+                  </span>
+                </label>
                 <button
-                  key={v.youtubeVideoId}
                   type="button"
-                  className="video-card transcript-library-card"
-                  onClick={() => setModalVideo(v)}
+                  className="search-button transcript-library-download-button"
+                  onClick={handleDownloadTranscripts}
+                  disabled={
+                    bulkDownload.loading || videoPanelDisabled || selectedVisibleCount === 0
+                  }
                 >
-                  {v.thumbnailUrl ? (
-                    <img
-                      src={v.thumbnailUrl}
-                      alt=""
-                      className="video-thumbnail"
-                    />
-                  ) : (
-                    <div className="video-thumbnail" style={{ background: '#eee' }} />
-                  )}
-                  <div className="video-info">
-                    <h3 className="video-title">{v.title}</h3>
-                    <p className="transcript-library-published">
-                      {new Date(v.publishedAt).toLocaleDateString()}
-                      {v.durationSeconds != null
-                        ? ` · ${formatDuration(v.durationSeconds)}`
-                        : ''}
-                      {multiChannelView && v.channel?.title ? ` · ${v.channel.title}` : ''}
-                      {isSearching && v.matchSource ? ` · Match: ${v.matchSource}` : ''}
-                    </p>
-                    {hasSummary(v) && (
-                      <div className="transcript-library-card-badges">
-                        <span className="transcript-library-badge">Summarized</span>
-                      </div>
-                    )}
-                  </div>
+                  {bulkDownload.loading ? 'Downloading…' : 'Download Transcripts'}
                 </button>
-              ))}
-            </div>
+              </div>
+              {bulkDownload.error && (
+                <p className="error-message transcript-library-bulk-status">{bulkDownload.error}</p>
+              )}
+              {bulkDownload.message && (
+                <p
+                  className={`transcript-library-bulk-status ${
+                    bulkDownload.partialFailures
+                      ? 'transcript-library-bulk-partial'
+                      : 'transcript-library-bulk-success'
+                  }`}
+                >
+                  {bulkDownload.message}
+                </p>
+              )}
+              <div className="video-grid">
+                {visibleVideos.map((v) => (
+                  <div key={v.youtubeVideoId} className="transcript-library-grid-item">
+                    <label
+                      className="transcript-library-card-checkbox"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedVideoIds.has(v.youtubeVideoId)}
+                        onChange={() => toggleVideoSelection(v.youtubeVideoId)}
+                        aria-label={`Select ${v.title}`}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="video-card transcript-library-card"
+                      onClick={() => setModalVideo(v)}
+                    >
+                      {v.thumbnailUrl ? (
+                        <img
+                          src={v.thumbnailUrl}
+                          alt=""
+                          className="video-thumbnail"
+                        />
+                      ) : (
+                        <div className="video-thumbnail" style={{ background: '#eee' }} />
+                      )}
+                      <div className="video-info">
+                        <h3 className="video-title">{v.title}</h3>
+                        <p className="transcript-library-published">
+                          {new Date(v.publishedAt).toLocaleDateString()}
+                          {v.durationSeconds != null
+                            ? ` · ${formatDuration(v.durationSeconds)}`
+                            : ''}
+                          {multiChannelView && v.channel?.title ? ` · ${v.channel.title}` : ''}
+                          {isSearching && v.matchSource ? ` · Match: ${v.matchSource}` : ''}
+                        </p>
+                        {hasSummary(v) && (
+                          <div className="transcript-library-card-badges">
+                            <span className="transcript-library-badge">Summarized</span>
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </section>
       </div>
