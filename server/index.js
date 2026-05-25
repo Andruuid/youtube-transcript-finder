@@ -20,6 +20,12 @@ import {
   toThumbnailBuffer
 } from './src/services/channelThumbnailService.js';
 import { importStructuredSummaries } from './src/services/structuredSummaryImportService.js';
+import {
+  deleteIdea,
+  getIdeaByVideoId,
+  listIdeas,
+  saveIdea
+} from './src/services/ideaService.js';
 
 const PORT = Number(
   process.env.TRANSCRIPT_SERVER_PORT || process.env.PORT || 3222
@@ -426,6 +432,53 @@ app.get('/api/search', async (req, res) => {
     return res.json(result);
   } catch (error) {
     return res.status(500).json({ error: error.message || 'Search failed' });
+  }
+});
+
+app.get('/api/ideas', async (_req, res) => {
+  try {
+    const items = await listIdeas();
+    return res.json({ items });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Failed to load ideas' });
+  }
+});
+
+app.get('/api/ideas/by-video/:youtubeVideoId', async (req, res) => {
+  const youtubeVideoId = String(req.params.youtubeVideoId || '').trim();
+  if (!youtubeVideoId) {
+    return res.status(400).json({ error: 'youtubeVideoId is required' });
+  }
+  try {
+    const idea = await getIdeaByVideoId(youtubeVideoId);
+    return res.json({ idea: idea || null });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Failed to load idea' });
+  }
+});
+
+app.post('/api/ideas', async (req, res) => {
+  try {
+    const idea = await saveIdea(req.body || {});
+    return res.json({ idea });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || 'Failed to save idea' });
+  }
+});
+
+app.delete('/api/ideas/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) {
+    return res.status(400).json({ error: 'Invalid idea id' });
+  }
+  try {
+    await deleteIdea(id);
+    return res.json({ ok: true });
+  } catch (error) {
+    if (error?.code === 'P2025') {
+      return res.status(404).json({ error: 'Idea not found' });
+    }
+    return res.status(500).json({ error: error.message || 'Failed to delete idea' });
   }
 });
 

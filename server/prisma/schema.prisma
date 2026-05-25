@@ -57,3 +57,16 @@ model Video {
   @@index([channelId, publishedAt(sort: Desc)])
   @@index([hasTranscript])
 }
+
+model Idea {
+  id             Int      @id @default(autoincrement())
+  channelTitle   String
+  videoTitle     String
+  stars          Int
+  comment        String?
+  youtubeVideoId String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([createdAt(sort: Desc)])
+}

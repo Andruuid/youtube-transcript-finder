@@ -4,6 +4,7 @@ import './AppNav.css';
 export const APP_VIEWS = [
   { id: 'channels', label: 'Channel monitor' },
   { id: 'library', label: 'Transcript library' },
+  { id: 'ideas', label: 'Ideas' },
   { id: 'search', label: 'Search' }
 ];
 
@@ -15,6 +16,8 @@ export function viewSubtitle(viewId) {
       return 'Persistent channel library with downloaded transcript tracking';
     case 'library':
       return 'Browse downloaded transcripts by channel';
+    case 'ideas':
+      return 'Saved video ideas with star ratings';
     default:
       return '';
   }

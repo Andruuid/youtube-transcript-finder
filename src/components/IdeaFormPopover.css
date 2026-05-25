@@ -1,0 +1,183 @@
+.idea-form-popover-anchor {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  z-index: 20;
+}
+
+.idea-form-popover-panel,
+.idea-form-popover-modal-panel {
+  width: min(320px, calc(100vw - 2rem));
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  text-align: left;
+}
+
+.idea-form-popover-title {
+  margin: 0 0 0.85rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #202124;
+}
+
+.idea-form-popover-field {
+  display: block;
+  margin-bottom: 0.85rem;
+}
+
+.idea-form-popover-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #5f6368;
+}
+
+.idea-form-popover-input,
+.idea-form-popover-textarea {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.92rem;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  outline: none;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.idea-form-popover-input:focus,
+.idea-form-popover-textarea:focus {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
+}
+
+.idea-form-popover-textarea {
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
+.idea-form-popover-readonly-meta {
+  margin-bottom: 0.85rem;
+  padding: 0.65rem 0.75rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid #e8eaed;
+}
+
+.idea-form-popover-meta-line {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #202124;
+  line-height: 1.4;
+}
+
+.idea-form-popover-meta-line + .idea-form-popover-meta-line {
+  margin-top: 0.45rem;
+}
+
+.idea-form-popover-meta-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #5f6368;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.15rem;
+}
+
+.idea-star-picker {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.idea-star-picker-star {
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  background: #fff;
+  color: #bdc1c6;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.idea-star-picker-star:hover,
+.idea-star-picker-star.is-selected {
+  color: #fbbc04;
+  border-color: #fbbc04;
+  background: #fff8e1;
+}
+
+.idea-star-display {
+  display: inline-flex;
+  gap: 0.1rem;
+}
+
+.idea-star-display-star {
+  color: #dadce0;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.idea-star-display-star.is-filled {
+  color: #fbbc04;
+}
+
+.idea-form-popover-error {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: #d93025;
+}
+
+.idea-form-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.idea-form-popover-cancel {
+  padding: 0.45rem 0.85rem;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  background: #fff;
+  color: #5f6368;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.idea-form-popover-cancel:hover:not(:disabled) {
+  background: #f8f9fa;
+}
+
+.idea-form-popover-cancel:disabled,
+.idea-form-popover-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.idea-form-popover-save {
+  padding: 0.45rem 1rem;
+  font-size: 0.88rem;
+}
+
+.idea-form-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(32, 33, 36, 0.45);
+}
+
+.idea-form-popover-modal-wrap {
+  width: min(360px, 100%);
+}

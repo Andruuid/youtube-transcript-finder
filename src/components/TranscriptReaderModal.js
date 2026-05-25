@@ -7,6 +7,8 @@ import {
   parseStructuredSummary
 } from '../utils/structuredSummaryUtils';
 import StructuredSummaryViewer from './StructuredSummaryViewer';
+import IdeaFormPopover from './IdeaFormPopover';
+import { getIdeaByVideoId, saveIdea } from '../services/ideasService';
 import './TranscriptReaderModal.css';
 
 function TranscriptContent({
@@ -261,6 +263,12 @@ export default function TranscriptReaderModal({
   const [summarizeError, setSummarizeError] = useState('');
   const [summarizeVariant, setSummarizeVariant] = useState(null);
   const [contentView, setContentView] = useState('transcript');
+  const [ideaPopoverOpen, setIdeaPopoverOpen] = useState(false);
+  const [savedIdea, setSavedIdea] = useState(null);
+  const [ideaLoading, setIdeaLoading] = useState(false);
+  const [ideaSaving, setIdeaSaving] = useState(false);
+  const [ideaSaveError, setIdeaSaveError] = useState('');
+  const ideaStarRef = useRef(null);
 
   const structuredSummary = useMemo(
     () => (video ? parseStructuredSummary(video) : null),
@@ -309,6 +317,56 @@ export default function TranscriptReaderModal({
       cancelled = true;
     };
   }, [video]);
+
+  useEffect(() => {
+    if (!video?.youtubeVideoId || !showStructured) {
+      setSavedIdea(null);
+      setIdeaPopoverOpen(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setIdeaLoading(true);
+    setIdeaSaveError('');
+    getIdeaByVideoId(video.youtubeVideoId)
+      .then((idea) => {
+        if (!cancelled) setSavedIdea(idea);
+      })
+      .catch(() => {
+        if (!cancelled) setSavedIdea(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIdeaLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [video?.youtubeVideoId, showStructured]);
+
+  const handleIdeaSave = useCallback(
+    async ({ stars, comment }) => {
+      if (!video) return;
+      setIdeaSaving(true);
+      setIdeaSaveError('');
+      try {
+        const idea = await saveIdea({
+          youtubeVideoId: video.youtubeVideoId,
+          channelTitle: video.channel?.title || 'Channel',
+          videoTitle: video.title,
+          stars,
+          comment
+        });
+        setSavedIdea(idea);
+        setIdeaPopoverOpen(false);
+      } catch (e) {
+        setIdeaSaveError(e.message || 'Failed to save idea');
+      } finally {
+        setIdeaSaving(false);
+      }
+    },
+    [video]
+  );
 
   const runSummarize = useCallback(
     async (variant) => {
@@ -370,6 +428,12 @@ export default function TranscriptReaderModal({
     if (!video) return undefined;
     const onKey = (e) => {
       if (e.key === 'Escape') {
+        if (ideaPopoverOpen) {
+          e.stopPropagation();
+          setIdeaPopoverOpen(false);
+          setIdeaSaveError('');
+          return;
+        }
         onClose();
         return;
       }
@@ -396,7 +460,7 @@ export default function TranscriptReaderModal({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [video, onClose, contentView, structuredSummaryNavigation]);
+  }, [video, onClose, contentView, structuredSummaryNavigation, ideaPopoverOpen]);
 
   if (!video) return null;
 
@@ -485,42 +549,80 @@ export default function TranscriptReaderModal({
                 Full transcript
               </button>
             </div>
-            {structuredSummaryNavigation && (
-              <div className="channel-transcript-structured-nav">
-                <span
-                  className="channel-transcript-structured-nav-count"
-                  aria-live="polite"
-                >
-                  {structuredSummaryNavigation.current} / {structuredSummaryNavigation.total}
-                </span>
+            <div className="channel-transcript-view-bar-actions">
+              <div className="channel-transcript-idea-star-wrap" ref={ideaStarRef}>
                 <button
                   type="button"
-                  className="channel-transcript-structured-nav-button"
+                  className={
+                    savedIdea
+                      ? 'channel-transcript-idea-star-button is-saved'
+                      : 'channel-transcript-idea-star-button'
+                  }
                   onClick={() => {
-                    setContentView('structured');
-                    structuredSummaryNavigation.onPrev();
+                    setIdeaSaveError('');
+                    setIdeaPopoverOpen((open) => !open);
                   }}
-                  disabled={!structuredSummaryNavigation.canNavigate}
-                  aria-label="Previous structured summary"
-                  title="Previous structured summary (←)"
+                  disabled={ideaLoading}
+                  aria-label={savedIdea ? 'Edit saved idea' : 'Save as idea'}
+                  title={savedIdea ? 'Edit saved idea' : 'Save as idea'}
                 >
-                  ←
+                  ★
                 </button>
-                <button
-                  type="button"
-                  className="channel-transcript-structured-nav-button"
-                  onClick={() => {
-                    setContentView('structured');
-                    structuredSummaryNavigation.onNext();
-                  }}
-                  disabled={!structuredSummaryNavigation.canNavigate}
-                  aria-label="Next structured summary"
-                  title="Next structured summary (→)"
-                >
-                  →
-                </button>
+                {ideaPopoverOpen ? (
+                  <IdeaFormPopover
+                    mode="popover"
+                    outsideClickRef={ideaStarRef}
+                    channelTitle={video.channel?.title || 'Channel'}
+                    videoTitle={video.title}
+                    initialStars={savedIdea?.stars || 0}
+                    initialComment={savedIdea?.comment || ''}
+                    onSave={handleIdeaSave}
+                    onCancel={() => {
+                      setIdeaPopoverOpen(false);
+                      setIdeaSaveError('');
+                    }}
+                    saving={ideaSaving}
+                    error={ideaSaveError}
+                  />
+                ) : null}
               </div>
-            )}
+              {structuredSummaryNavigation ? (
+                <div className="channel-transcript-structured-nav">
+                  <span
+                    className="channel-transcript-structured-nav-count"
+                    aria-live="polite"
+                  >
+                    {structuredSummaryNavigation.current} / {structuredSummaryNavigation.total}
+                  </span>
+                  <button
+                    type="button"
+                    className="channel-transcript-structured-nav-button"
+                    onClick={() => {
+                      setContentView('structured');
+                      structuredSummaryNavigation.onPrev();
+                    }}
+                    disabled={!structuredSummaryNavigation.canNavigate}
+                    aria-label="Previous structured summary"
+                    title="Previous structured summary (←)"
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    className="channel-transcript-structured-nav-button"
+                    onClick={() => {
+                      setContentView('structured');
+                      structuredSummaryNavigation.onNext();
+                    }}
+                    disabled={!structuredSummaryNavigation.canNavigate}
+                    aria-label="Next structured summary"
+                    title="Next structured summary (→)"
+                  >
+                    →
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         )}
 
