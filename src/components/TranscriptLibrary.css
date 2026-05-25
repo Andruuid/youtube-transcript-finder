@@ -2,6 +2,92 @@
   text-align: left;
 }
 
+.transcript-library-search-bar {
+  background: #fff;
+  border-radius: 8px;
+  padding: 1.25rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  margin-bottom: 1.5rem;
+}
+
+.transcript-library-search-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .transcript-library-search-row {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+}
+
+.transcript-library-search-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.transcript-library-duration-filter {
+  min-width: 160px;
+}
+
+.transcript-library-duration-input {
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  font-size: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.transcript-library-duration-input:focus {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+}
+
+.transcript-library-duration-input:disabled {
+  background: #f1f3f4;
+  cursor: not-allowed;
+}
+
+.transcript-library-search-label {
+  display: block;
+  margin: 0 0 0.45rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #444;
+}
+
+.transcript-library-search-input {
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  font-size: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.transcript-library-search-input:focus {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+}
+
+.transcript-library-search-input:disabled {
+  background: #f1f3f4;
+  cursor: not-allowed;
+}
+
+.transcript-library-search-hint {
+  margin: 0.55rem 0 0;
+  font-size: 0.85rem;
+  color: #5f6368;
+}
+
 .transcript-library-columns {
   display: grid;
   grid-template-columns: 1fr;
@@ -38,6 +124,9 @@
 }
 
 .transcript-library-channel-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
   border-bottom: 1px solid #eee;
 }
 
@@ -45,11 +134,36 @@
   border-bottom: none;
 }
 
+.transcript-library-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #444;
+  font-weight: 500;
+  margin: 0 0 0.45rem;
+}
+
+.transcript-library-select-all input {
+  width: 1rem;
+  height: 1rem;
+}
+
+.transcript-library-channel-checkbox {
+  margin-top: 0.75rem;
+  flex-shrink: 0;
+}
+
+.transcript-library-channel-checkbox input {
+  width: 1rem;
+  height: 1rem;
+}
+
 .transcript-library-channel-button {
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 0.65rem 0.35rem;
   margin: 0;
   border: none;

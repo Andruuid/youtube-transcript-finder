@@ -126,14 +126,16 @@ app.post('/api/channels/sync', async (req, res) => {
           title: video.title,
           description: video.description,
           publishedAt: new Date(video.publishedAt),
-          thumbnailUrl: video.thumbnailUrl
+          thumbnailUrl: video.thumbnailUrl,
+          durationSeconds: video.durationSeconds ?? null
         },
         update: {
           channelId: upsertedChannel.id,
           title: video.title,
           description: video.description,
           publishedAt: new Date(video.publishedAt),
-          thumbnailUrl: video.thumbnailUrl
+          thumbnailUrl: video.thumbnailUrl,
+          durationSeconds: video.durationSeconds ?? null
         }
       });
     }
@@ -347,17 +349,30 @@ app.post('/api/summarize-transcript', async (req, res) => {
 app.get('/api/search', async (req, res) => {
   const q = String(req.query.q || '').trim();
   const channelId = String(req.query.channelId || '').trim();
+  const channelIdsParam = String(req.query.channelIds || '').trim();
+  const downloadedOnly =
+    req.query.downloadedOnly === '1' || req.query.downloadedOnly === 'true';
   const skip = Math.max(Number(req.query.skip || 0), 0);
   const take = Math.min(Math.max(Number(req.query.take || 100), 1), 200);
   if (!q) {
     return res.json({ total: 0, items: [] });
   }
   try {
+    let youtubeChannelIds;
+    if (channelIdsParam) {
+      youtubeChannelIds = channelIdsParam
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+    } else if (channelId) {
+      youtubeChannelIds = [channelId];
+    }
     const result = await searchLibrary({
       query: q,
-      youtubeChannelId: channelId || undefined,
+      youtubeChannelIds,
       skip,
-      take
+      take,
+      downloadedOnly
     });
     return res.json(result);
   } catch (error) {

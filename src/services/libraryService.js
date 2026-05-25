@@ -88,9 +88,25 @@ export async function downloadTranscript(videoId) {
   return parseJsonResponse(res, 'Failed to download transcript');
 }
 
-export async function searchLibrary(query, channelId = '') {
+/**
+ * @param {string} query
+ * @param {string | { channelIds?: string[], downloadedOnly?: boolean }} channelIdOrOptions
+ */
+export async function searchLibrary(query, channelIdOrOptions = '') {
+  let channelIds = [];
+  let downloadedOnly = false;
+
+  if (typeof channelIdOrOptions === 'object' && channelIdOrOptions !== null) {
+    channelIds = channelIdOrOptions.channelIds || [];
+    downloadedOnly = !!channelIdOrOptions.downloadedOnly;
+  } else if (channelIdOrOptions) {
+    channelIds = [channelIdOrOptions];
+  }
+
   const qp = new URLSearchParams({ q: query, skip: '0', take: '200' });
-  if (channelId) qp.set('channelId', channelId);
+  if (channelIds.length === 1) qp.set('channelId', channelIds[0]);
+  else if (channelIds.length > 1) qp.set('channelIds', channelIds.join(','));
+  if (downloadedOnly) qp.set('downloadedOnly', '1');
   const res = await fetch(`/api/search?${qp}`);
   const data = await parseJsonResponse(res, 'Failed to search library');
   return data.items || [];

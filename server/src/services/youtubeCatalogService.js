@@ -65,6 +65,21 @@ export function parseChannelInput(rawInput) {
   );
 }
 
+/** Parse YouTube contentDetails.duration (ISO 8601, e.g. PT1H2M3S) to seconds. */
+export function iso8601DurationToSeconds(iso) {
+  if (!iso || typeof iso !== 'string' || !iso.startsWith('PT')) {
+    return 0;
+  }
+  const match = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/);
+  if (!match) {
+    return 0;
+  }
+  const h = parseInt(match[1] || '0', 10);
+  const m = parseInt(match[2] || '0', 10);
+  const s = parseFloat(match[3] || '0');
+  return Math.round(h * 3600 + m * 60 + s);
+}
+
 export async function resolveChannel(rawInput) {
   const parsed = parseChannelInput(rawInput);
   const params =
@@ -117,7 +132,8 @@ export async function fetchChannelVideos(youtubeChannelId, limit = 50, pageToken
       title: video.snippet?.title || '(untitled)',
       description: video.snippet?.description || '',
       publishedAt: video.snippet?.publishedAt || new Date().toISOString(),
-      thumbnailUrl: video.snippet?.thumbnails?.medium?.url || null
+      thumbnailUrl: video.snippet?.thumbnails?.medium?.url || null,
+      durationSeconds: iso8601DurationToSeconds(video.contentDetails?.duration) || null
     }));
 
   return { videos, nextPageToken: searchData.nextPageToken || null };

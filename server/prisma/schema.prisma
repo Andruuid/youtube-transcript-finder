@@ -32,6 +32,8 @@ model Video {
   description       String
   publishedAt       DateTime
   thumbnailUrl      String?
+  /** Video length from YouTube contentDetails.duration, in seconds. */
+  durationSeconds   Int?
   hasTranscript     Boolean  @default(false)
   transcriptText    String?
   transcriptFetchedAt DateTime?
