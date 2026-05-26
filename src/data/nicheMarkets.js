@@ -26,18 +26,34 @@ export const NICHE_MARKETS = [
   }
 ];
 
-/** @param {string} label */
-export function estimateNicheNodeWidth(label) {
-  return Math.min(340, Math.max(108, label.length * 6.2 + 52));
+/** @param {string} label @param {boolean} [hasChildren] */
+export function estimateNicheNodeWidth(label, hasChildren = false) {
+  const chrome = 44 + (hasChildren ? 18 : 0) + 22;
+  const textWidth = label.length * 7.5;
+  return Math.min(480, Math.max(112, Math.ceil(textWidth + chrome)));
+}
+
+/** @param {string} label @param {number} width @param {boolean} [hasChildren] */
+export function estimateNicheNodeHeight(label, width, hasChildren = false) {
+  const chrome = 44 + (hasChildren ? 18 : 0) + 22;
+  const textAreaWidth = Math.max(80, width - chrome);
+  const charsPerLine = Math.max(6, Math.floor(textAreaWidth / 7.5));
+  const lineCount = Math.ceil(label.length / charsPerLine);
+  const lineHeight = 22;
+  const verticalPadding = 20;
+  return Math.max(46, lineCount * lineHeight + verticalPadding);
 }
 
 /** @param {{ id: string, label: string, children?: object[] }} node */
 export function toD3TreeData(node) {
+  const hasChildren = Boolean(node.children?.length);
+  const nodeWidth = estimateNicheNodeWidth(node.label, hasChildren);
   const result = {
     name: node.label,
     attributes: {
       id: node.id,
-      nodeWidth: estimateNicheNodeWidth(node.label)
+      nodeWidth,
+      nodeHeight: estimateNicheNodeHeight(node.label, nodeWidth, hasChildren)
     }
   };
   if (node.children?.length) {

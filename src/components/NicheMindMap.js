@@ -8,6 +8,11 @@ function getNodeWidth(nodeDatum) {
   return typeof w === 'number' ? w : 140;
 }
 
+function getNodeHeight(nodeDatum) {
+  const h = nodeDatum?.attributes?.nodeHeight;
+  return typeof h === 'number' ? h : 34;
+}
+
 /** Curved links from parent right edge to child left edge (horizontal tree). */
 function nicheLinkPath(link, orientation) {
   if (orientation !== 'horizontal') {
@@ -32,7 +37,7 @@ function CustomNicheNode({ nodeDatum, toggleNode, accentColor, onCopy, copiedId 
   const nodeId = nodeDatum.attributes?.id || nodeDatum.name;
   const label = nodeDatum.name;
   const width = getNodeWidth(nodeDatum);
-  const height = 34;
+  const height = getNodeHeight(nodeDatum);
   const isCopied = copiedId === nodeId;
   const isRoot = depth === 0;
   const isBranch = depth === 1;
@@ -79,7 +84,11 @@ function CustomNicheNode({ nodeDatum, toggleNode, accentColor, onCopy, copiedId 
           ]
             .filter(Boolean)
             .join(' ')}
-          style={{ '--node-accent': accentColor, width: `${width}px` }}
+          style={{
+            '--node-accent': accentColor,
+            width: `${width}px`,
+            minHeight: `${height}px`
+          }}
         >
           {hasChildren ? (
             <button
@@ -99,6 +108,7 @@ function CustomNicheNode({ nodeDatum, toggleNode, accentColor, onCopy, copiedId 
             type="button"
             className="niche-tree-pill-label"
             aria-expanded={hasChildren ? !collapsed : undefined}
+            title={label}
             onClick={handleLabelClick}
             onKeyDown={hasChildren ? handleKeyDown : undefined}
           >
@@ -230,8 +240,8 @@ export default function NicheMindMap({ root, accentColor }) {
           hasInteractiveNodes
           pathFunc={nicheLinkPath}
           pathClassFunc={pathClassFunc}
-          separation={{ siblings: 1.15, nonSiblings: 1.4 }}
-          nodeSize={{ x: 340, y: 44 }}
+          separation={{ siblings: 1.2, nonSiblings: 1.45 }}
+          nodeSize={{ x: 500, y: 64 }}
           scaleExtent={{ min: 0.2, max: 2 }}
           renderCustomNodeElement={renderCustomNodeElement}
           svgClassName="niche-tree-svg"

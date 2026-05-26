@@ -85,17 +85,17 @@
   display: flex;
   align-items: center;
   gap: 0.15rem;
-  height: 34px;
-  padding: 0 0.45rem 0 0.55rem;
+  min-height: 46px;
+  height: auto;
+  padding: 0.4rem 0.45rem 0.4rem 0.55rem;
   border-radius: 999px;
   border: 1px solid #e2e8e7;
   background: #fff;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
   font-family: 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans',
     'Helvetica Neue', sans-serif;
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
+  line-height: 1.35;
+  overflow: visible;
 }
 
 .niche-tree-pill-root {
@@ -181,8 +181,10 @@
   font-size: 0.86rem;
   color: inherit;
   font-family: inherit;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  white-space: normal;
+  word-break: break-word;
+  hyphens: auto;
 }
 
 .niche-tree-pill-label:hover {
