@@ -134,6 +134,9 @@ export async function apiFetchTranscriptText(videoId) {
   };
 }
 
+/** @deprecated Prefer {@link apiFetchTranscriptText}. */
+export const fetchTranscriptText = apiFetchTranscriptText;
+
 /**
  * Summarizes transcript via OpenRouter (server holds API key and prompts).
  * Pass youtubeVideoId so the server can persist summary + model on the Video row.

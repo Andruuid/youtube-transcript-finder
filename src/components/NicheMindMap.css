@@ -1,0 +1,219 @@
+.niche-mindmap-canvas {
+  --niche-accent: #0d9488;
+  width: 100%;
+  min-height: 70vh;
+  height: 70vh;
+  background: linear-gradient(135deg, #faf9f7 0%, #f3f6f5 100%);
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.niche-mindmap-toolbar {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.niche-mindmap-toolbar-btn {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: #202124;
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.niche-mindmap-toolbar-btn:hover:not(:disabled) {
+  border-color: var(--niche-accent);
+  color: var(--niche-accent);
+}
+
+.niche-mindmap-toolbar-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.niche-mindmap-toolbar-btn-muted {
+  font-weight: 500;
+  color: #5f6368;
+}
+
+.niche-tree-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.niche-tree-link {
+  fill: none;
+  stroke: var(--niche-accent);
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.niche-tree-link-d0,
+.niche-tree-link-d1 {
+  stroke-opacity: 0.9;
+}
+
+.niche-tree-link-d2 {
+  stroke-opacity: 0.72;
+}
+
+.niche-tree-link-d3 {
+  stroke-opacity: 0.58;
+}
+
+.niche-tree-link-d4,
+.niche-tree-link-d5 {
+  stroke-opacity: 0.45;
+}
+
+.niche-tree-pill {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  height: 34px;
+  padding: 0 0.45rem 0 0.55rem;
+  border-radius: 999px;
+  border: 1px solid #e2e8e7;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  font-family: 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans',
+    'Helvetica Neue', sans-serif;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.niche-tree-pill-root {
+  background: linear-gradient(
+    135deg,
+    var(--node-accent, var(--niche-accent)) 0%,
+    color-mix(in srgb, var(--node-accent, var(--niche-accent)) 82%, #fff) 100%
+  );
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.28);
+}
+
+.niche-tree-pill-root .niche-tree-pill-label {
+  color: #fff;
+  font-weight: 700;
+}
+
+.niche-tree-pill-root .niche-tree-pill-chevron {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.niche-tree-pill-root .niche-tree-pill-copy {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.niche-tree-pill-root .niche-tree-pill-copy:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+.niche-tree-pill-branch {
+  background: color-mix(in srgb, var(--node-accent, var(--niche-accent)) 10%, #fff);
+  border-color: color-mix(in srgb, var(--node-accent, var(--niche-accent)) 35%, #e2e8e7);
+}
+
+.niche-tree-pill-depth-1 .niche-tree-pill-label {
+  color: var(--node-accent, var(--niche-accent));
+  font-weight: 600;
+}
+
+.niche-tree-pill-depth-2 .niche-tree-pill-label {
+  color: #1a4f4a;
+  font-weight: 600;
+}
+
+.niche-tree-pill-depth-3 .niche-tree-pill-label {
+  color: #2d3e3c;
+  font-weight: 500;
+}
+
+.niche-tree-pill-depth-4 .niche-tree-pill-label {
+  color: #3c4043;
+  font-weight: 500;
+  font-size: 0.82rem;
+}
+
+.niche-tree-pill-collapsed {
+  border-style: dashed;
+  opacity: 0.92;
+}
+
+.niche-tree-pill-chevron {
+  flex-shrink: 0;
+  width: 1rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--node-accent, var(--niche-accent));
+  font-size: 0.65rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.niche-tree-pill-label {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-weight: inherit;
+  font-size: 0.86rem;
+  color: inherit;
+  font-family: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.niche-tree-pill-label:hover {
+  text-decoration: underline;
+}
+
+.niche-tree-pill-copy {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #80868b;
+  font-size: 0.72rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.niche-tree-pill:hover .niche-tree-pill-copy,
+.niche-tree-pill-copy:focus {
+  opacity: 1;
+}
+
+.niche-tree-pill-copy:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--node-accent, var(--niche-accent));
+}
+
+.niche-tree-pill-root .niche-tree-pill-label {
+  font-size: 0.92rem;
+}

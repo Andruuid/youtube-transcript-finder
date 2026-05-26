@@ -5,6 +5,7 @@ export const APP_VIEWS = [
   { id: 'channels', label: 'Channel monitor' },
   { id: 'library', label: 'Transcript library' },
   { id: 'ideas', label: 'Ideas' },
+  { id: 'niches', label: 'Niches' },
   { id: 'search', label: 'Search' }
 ];
 
@@ -18,6 +19,8 @@ export function viewSubtitle(viewId) {
       return 'Browse downloaded transcripts by channel';
     case 'ideas':
       return 'Saved video ideas with star ratings';
+    case 'niches':
+      return 'Explore health, wealth, and relationship markets and niches';
     default:
       return '';
   }

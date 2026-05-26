@@ -5,6 +5,7 @@ import AppNav, { viewSubtitle } from './components/AppNav';
 import ChannelMonitor from './components/ChannelMonitor';
 import TranscriptLibrary from './components/TranscriptLibrary';
 import Ideas from './components/Ideas';
+import Niches from './components/Niches';
 import {
   searchVideos,
   getVideoDetails,
@@ -233,6 +234,8 @@ Input:\n` +
           <TranscriptLibrary />
         ) : activeTab === 'ideas' ? (
           <Ideas />
+        ) : activeTab === 'niches' ? (
+          <Niches />
         ) : (
           <>
         <div className="search-container">
