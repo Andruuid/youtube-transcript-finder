@@ -323,6 +323,10 @@ export default function TranscriptLibrary() {
     refreshVideos();
   }, [loadingChannels, refreshVideos]);
 
+  const selectOnlyChannel = (youtubeChannelId) => {
+    setSelectedChannelIds(new Set([youtubeChannelId]));
+  };
+
   const toggleChannelSelection = (youtubeChannelId) => {
     setSelectedChannelIds((prev) => {
       const next = new Set(prev);
@@ -330,6 +334,15 @@ export default function TranscriptLibrary() {
       else next.add(youtubeChannelId);
       return next;
     });
+  };
+
+  const handleChannelCheckboxClick = (event, youtubeChannelId) => {
+    event.stopPropagation();
+    toggleChannelSelection(youtubeChannelId);
+  };
+
+  const handleChannelRowClick = (youtubeChannelId) => {
+    selectOnlyChannel(youtubeChannelId);
   };
 
   const toggleAllChannelsSelection = () => {
@@ -601,8 +614,9 @@ export default function TranscriptLibrary() {
           </div>
         </div>
         <p className="transcript-library-search-hint">
-          Matches titles first, then description and transcript text. Click channels to browse or
-          search one or many at once. Set min. length to filter out Shorts and shorter videos
+          Matches titles first, then description and transcript text. Click a channel to view it
+          alone; use checkboxes to add more channels. Set min. length to filter out Shorts and
+          shorter videos
           {backfillingDurations
             ? ' (fetching video lengths from YouTube…).'
             : hasDurationFilter && unknownDurationCount > 0
@@ -642,33 +656,53 @@ export default function TranscriptLibrary() {
                   const isSelected = selectedChannelIds.has(c.youtubeChannelId);
                   return (
                     <li key={c.youtubeChannelId} className="transcript-library-channel-item">
-                      <label
+                      <div
                         className={
                           isSelected
                             ? 'transcript-library-channel-row is-active'
                             : 'transcript-library-channel-row'
                         }
+                        onClick={() => handleChannelRowClick(c.youtubeChannelId)}
                       >
-                        <input
-                          type="checkbox"
-                          className="transcript-library-channel-checkbox-input"
-                          checked={isSelected}
-                          onChange={() => toggleChannelSelection(c.youtubeChannelId)}
+                        <div
+                          className="transcript-library-channel-checkbox"
+                          data-channel-checkbox
+                          onClick={(e) => handleChannelCheckboxClick(e, c.youtubeChannelId)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleChannelCheckboxClick(e, c.youtubeChannelId);
+                            }
+                          }}
+                          role="checkbox"
+                          aria-checked={isSelected}
                           aria-label={`Include ${c.title} in search and list`}
-                        />
-                        {c.thumbnailUrl ? (
-                          <ChannelAvatar
-                            src={c.thumbnailUrl}
-                            className="transcript-library-channel-thumb"
+                          tabIndex={0}
+                        >
+                          <input
+                            type="checkbox"
+                            className="transcript-library-channel-checkbox-input"
+                            checked={isSelected}
+                            readOnly
+                            tabIndex={-1}
+                            aria-hidden="true"
                           />
-                        ) : null}
-                        <span className="transcript-library-channel-text">
-                          <span className="transcript-library-channel-title">{c.title}</span>
-                          <span className="transcript-library-channel-meta">
-                            {c.downloadedCount} transcript{c.downloadedCount === 1 ? '' : 's'}
+                        </div>
+                        <div className="transcript-library-channel-body">
+                          {c.thumbnailUrl ? (
+                            <ChannelAvatar
+                              src={c.thumbnailUrl}
+                              className="transcript-library-channel-thumb"
+                            />
+                          ) : null}
+                          <span className="transcript-library-channel-text">
+                            <span className="transcript-library-channel-title">{c.title}</span>
+                            <span className="transcript-library-channel-meta">
+                              {c.downloadedCount} transcript{c.downloadedCount === 1 ? '' : 's'}
+                            </span>
                           </span>
-                        </span>
-                      </label>
+                        </div>
+                      </div>
                     </li>
                   );
                 })}
