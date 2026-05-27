@@ -66,7 +66,7 @@ export default function AccessGate({ children }) {
   return (
     <div className="access-gate">
       <form className="access-gate-card" onSubmit={handleSubmit}>
-        <h1>YouTube Transcript Tool</h1>
+        <h1>Market Research Tool</h1>
         <p className="access-gate-lead">Enter the shared password to continue.</p>
         <label className="access-gate-label" htmlFor="access-password">
           Password

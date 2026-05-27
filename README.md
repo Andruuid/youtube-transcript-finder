@@ -1,4 +1,4 @@
-# YouTube Transcript Tool
+# Market Research Tool
 
 ## Setup
 

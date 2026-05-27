@@ -222,7 +222,7 @@ Input:\n` +
   return (
     <div className="App">
       <header className="App-header">
-        <h1>YouTube Transcript Tool</h1>
+        <h1>Market Research Tool</h1>
         <p>{viewSubtitle(activeTab)}</p>
         <AppNav activeId={activeTab} onChange={setActiveTab} />
       </header>
@@ -414,7 +414,7 @@ Input:\n` +
       </main>
       
       <footer className="App-footer">
-        <p>YouTube Transcript Tool &copy; {new Date().getFullYear()}</p>
+        <p>Market Research Tool &copy; {new Date().getFullYear()}</p>
       </footer>
     </div>
   );

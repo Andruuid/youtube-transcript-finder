@@ -18,7 +18,7 @@ export function viewSubtitle(viewId) {
     case 'library':
       return 'Browse downloaded transcripts by channel';
     case 'ideas':
-      return 'Saved video ideas with star ratings';
+      return 'Saved Ideas with star ratings';
     case 'niches':
       return 'Explore health, wealth, and relationship markets and niches';
     default:
