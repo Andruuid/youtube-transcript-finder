@@ -1,0 +1,12 @@
+# Copy to:  C:\Users\<you>\.cloudflared\config.yml
+# Or run:   .\scripts\setup-cloudflared-tunnel.ps1
+#
+# Replace TUNNEL_ID with the UUID from:  cloudflared tunnel create ytf
+
+tunnel: TUNNEL_ID
+credentials-file: C:\Users\<you>\.cloudflared\TUNNEL_ID.json
+
+ingress:
+  - hostname: app.marketsresearch.net
+    service: http://localhost:3221
+  - service: http_status:404

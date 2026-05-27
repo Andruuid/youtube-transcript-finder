@@ -32,6 +32,42 @@ Starts both the React app and transcript API server together.
 
 If you only run `npm run dev`, the frontend starts without the backend and `/api/*` requests will fail with a proxy error.
 
+## Share with friends (Cloudflare Tunnel)
+
+Public URL: **https://app.marketsresearch.net** (stable; does not change when you restart the tunnel).
+
+**One-time setup** (after Cloudflare shows `marketsresearch.net` as Active):
+
+1. Log in cloudflared on this laptop (browser opens once):
+
+   ```powershell
+   cloudflared tunnel login
+   ```
+
+   Select **marketsresearch.net** in the browser.
+
+2. Run the setup script from the project root:
+
+   ```powershell
+   .\scripts\setup-cloudflared-tunnel.ps1
+   ```
+
+   This creates tunnel `ytf`, writes `%USERPROFILE%\.cloudflared\config.yml`, and routes DNS for `app.marketsresearch.net`. The **tunnel ID** is printed by `cloudflared tunnel create` — you do not copy it from the Cloudflare website.
+
+3. Set `ACCESS_PASSWORD` in `server/.env` so only people you share the password with can use the app.
+
+**Each time you want friends to connect:**
+
+```powershell
+npm run dev:full
+```
+
+That starts the app and opens the tunnel if it is not already running. Share the URL and the password.
+
+Local development without touching cloudflared: `npm run dev:local`
+
+Full details: [docs/sharing-with-cloudflare-tunnel.md](docs/sharing-with-cloudflare-tunnel.md)
+
 ### `npm test`
 
 Launches the test runner in the interactive watch mode.\
