@@ -1,14 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
 import './IdeaFormPopover.css';
 
-export function StarRatingDisplay({ stars, className = '' }) {
-  const count = Math.min(Math.max(Number(stars) || 0, 0), 3);
+export const EFFORT_LEVELS = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' }
+];
+
+const STAR_COUNT = 5;
+
+export function StarRatingDisplay({ stars, className = '', compact = false }) {
+  const count = Math.min(Math.max(Number(stars) || 0, 0), STAR_COUNT);
   return (
     <span
-      className={`idea-star-display ${className}`.trim()}
-      aria-label={`${count} out of 3 stars`}
+      className={`idea-star-display ${compact ? 'is-compact' : ''} ${className}`.trim()}
+      aria-label={`${count} out of ${STAR_COUNT} stars`}
     >
-      {[1, 2, 3].map((n) => (
+      {Array.from({ length: STAR_COUNT }, (_, i) => i + 1).map((n) => (
         <span
           key={n}
           className={
@@ -23,10 +31,29 @@ export function StarRatingDisplay({ stars, className = '' }) {
   );
 }
 
-function StarPicker({ value, onChange }) {
+export function EffortDisplay({ effort, className = '' }) {
+  if (!effort) {
+    return <span className={`idea-effort-display is-empty ${className}`.trim()}>—</span>;
+  }
+  const label =
+    EFFORT_LEVELS.find((level) => level.value === effort)?.label || effort;
   return (
-    <div className="idea-star-picker" role="group" aria-label="Rating">
-      {[1, 2, 3].map((n) => (
+    <span
+      className={`idea-effort-display idea-effort-display-${effort} ${className}`.trim()}
+    >
+      {label}
+    </span>
+  );
+}
+
+export function StarRatingInput({ value, onChange, disabled = false, compact = false }) {
+  return (
+    <div
+      className={`idea-star-picker ${compact ? 'is-compact' : ''}`}
+      role="group"
+      aria-label="Rating"
+    >
+      {Array.from({ length: STAR_COUNT }, (_, i) => i + 1).map((n) => (
         <button
           key={n}
           type="button"
@@ -36,6 +63,7 @@ function StarPicker({ value, onChange }) {
               : 'idea-star-picker-star'
           }
           onClick={() => onChange(n)}
+          disabled={disabled}
           aria-label={`${n} star${n > 1 ? 's' : ''}`}
           aria-pressed={n <= value}
         >
@@ -46,12 +74,40 @@ function StarPicker({ value, onChange }) {
   );
 }
 
+function StarPicker({ value, onChange }) {
+  return <StarRatingInput value={value} onChange={onChange} />;
+}
+
+function EffortPicker({ value, onChange }) {
+  return (
+    <div className="idea-effort-picker" role="group" aria-label="Estimated Effort">
+      {EFFORT_LEVELS.map(({ value: level, label }) => (
+        <button
+          key={level}
+          type="button"
+          className={
+            value === level
+              ? `idea-effort-picker-option is-selected idea-effort-display-${level}`
+              : 'idea-effort-picker-option'
+          }
+          onClick={() => onChange(level)}
+          aria-pressed={value === level}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function IdeaFormPopover({
   mode = 'popover',
   manual = false,
+  editing = false,
   channelTitle: initialChannelTitle = '',
   videoTitle: initialVideoTitle = '',
   initialStars = 0,
+  initialEffort = '',
   initialComment = '',
   onSave,
   onCancel,
@@ -63,6 +119,7 @@ export default function IdeaFormPopover({
   const [channelTitle, setChannelTitle] = useState(initialChannelTitle);
   const [videoTitle, setVideoTitle] = useState(initialVideoTitle);
   const [stars, setStars] = useState(initialStars);
+  const [effort, setEffort] = useState(initialEffort);
   const [comment, setComment] = useState(initialComment);
   const panelRef = useRef(null);
   const commentRef = useRef(null);
@@ -71,8 +128,15 @@ export default function IdeaFormPopover({
     setChannelTitle(initialChannelTitle);
     setVideoTitle(initialVideoTitle);
     setStars(initialStars);
+    setEffort(initialEffort);
     setComment(initialComment);
-  }, [initialChannelTitle, initialVideoTitle, initialStars, initialComment]);
+  }, [
+    initialChannelTitle,
+    initialVideoTitle,
+    initialStars,
+    initialEffort,
+    initialComment
+  ]);
 
   useEffect(() => {
     if (!autoFocusComment) return undefined;
@@ -107,7 +171,11 @@ export default function IdeaFormPopover({
   }, [mode, onCancel, outsideClickRef]);
 
   const trimmedTitle = videoTitle.trim();
-  const canSave = stars >= 1 && stars <= 3 && (!manual || trimmedTitle.length > 0);
+  const showEditableFields = manual || editing;
+  const canSave =
+    stars >= 1 &&
+    stars <= STAR_COUNT &&
+    (!showEditableFields || trimmedTitle.length > 0);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -116,6 +184,7 @@ export default function IdeaFormPopover({
       channelTitle: channelTitle.trim(),
       videoTitle: trimmedTitle,
       stars,
+      effort: effort || null,
       comment: comment.trim()
     });
   };
@@ -139,21 +208,11 @@ export default function IdeaFormPopover({
       onClick={(e) => e.stopPropagation()}
     >
       <h3 className="idea-form-popover-title">
-        {manual ? 'New idea' : 'Save idea'}
+        {editing ? 'Edit idea' : manual ? 'New idea' : 'Save idea'}
       </h3>
 
-      {manual ? (
+      {showEditableFields ? (
         <>
-          <label className="idea-form-popover-field">
-            <span className="idea-form-popover-label">Channel (optional)</span>
-            <input
-              type="text"
-              className="idea-form-popover-input"
-              value={channelTitle}
-              onChange={(e) => setChannelTitle(e.target.value)}
-              placeholder="Channel or source"
-            />
-          </label>
           <label className="idea-form-popover-field">
             <span className="idea-form-popover-label">Title</span>
             <input
@@ -165,19 +224,29 @@ export default function IdeaFormPopover({
               required
             />
           </label>
+          <label className="idea-form-popover-field">
+            <span className="idea-form-popover-label">Channel (optional)</span>
+            <input
+              type="text"
+              className="idea-form-popover-input"
+              value={channelTitle}
+              onChange={(e) => setChannelTitle(e.target.value)}
+              placeholder="Channel or source"
+            />
+          </label>
         </>
       ) : (
         <div className="idea-form-popover-readonly-meta">
+          <p className="idea-form-popover-meta-line">
+            <span className="idea-form-popover-meta-label">Title</span>
+            {videoTitle || 'Untitled'}
+          </p>
           {channelTitle ? (
             <p className="idea-form-popover-meta-line">
               <span className="idea-form-popover-meta-label">Channel</span>
               {channelTitle}
             </p>
           ) : null}
-          <p className="idea-form-popover-meta-line">
-            <span className="idea-form-popover-meta-label">Title</span>
-            {videoTitle || 'Untitled'}
-          </p>
         </div>
       )}
 
@@ -186,8 +255,13 @@ export default function IdeaFormPopover({
         <StarPicker value={stars} onChange={setStars} />
       </div>
 
+      <div className="idea-form-popover-field">
+        <span className="idea-form-popover-label">Estimated Effort</span>
+        <EffortPicker value={effort} onChange={setEffort} />
+      </div>
+
       <label className="idea-form-popover-field">
-        <span className="idea-form-popover-label">Comment (optional)</span>
+        <span className="idea-form-popover-label">Description</span>
         <textarea
           ref={commentRef}
           className="idea-form-popover-textarea"
@@ -195,7 +269,7 @@ export default function IdeaFormPopover({
           onChange={(e) => setComment(e.target.value)}
           onKeyDown={handleCommentKeyDown}
           placeholder="Why is this interesting?"
-          rows={3}
+          rows={5}
         />
       </label>
 

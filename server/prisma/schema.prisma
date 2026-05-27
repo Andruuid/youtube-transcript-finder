@@ -63,6 +63,7 @@ model Idea {
   channelTitle   String
   videoTitle     String
   stars          Int
+  effort         String?
   comment        String?
   youtubeVideoId String?  @unique
   createdAt      DateTime @default(now())

@@ -24,7 +24,8 @@ import {
   deleteIdea,
   getIdeaByVideoId,
   listIdeas,
-  saveIdea
+  saveIdea,
+  updateIdea
 } from './src/services/ideaService.js';
 import {
   clearAccessCookie,
@@ -505,6 +506,23 @@ app.post('/api/ideas', async (req, res) => {
     return res.json({ idea });
   } catch (error) {
     return res.status(400).json({ error: error.message || 'Failed to save idea' });
+  }
+});
+
+app.patch('/api/ideas/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) {
+    return res.status(400).json({ error: 'Invalid idea id' });
+  }
+  try {
+    const idea = await updateIdea(id, req.body || {});
+    return res.json({ idea });
+  } catch (error) {
+    if (error?.code === 'P2025') {
+      return res.status(404).json({ error: 'Idea not found' });
+    }
+    const status = error.message === 'No fields to update' ? 400 : 400;
+    return res.status(status).json({ error: error.message || 'Failed to update idea' });
   }
 });
 

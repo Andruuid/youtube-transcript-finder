@@ -347,7 +347,7 @@ export default function TranscriptReaderModal({
   }, [video?.youtubeVideoId, showStructured]);
 
   const handleIdeaSave = useCallback(
-    async ({ stars, comment }) => {
+    async ({ stars, effort, comment }) => {
       if (!video) return;
       setIdeaSaving(true);
       setIdeaSaveError('');
@@ -357,6 +357,7 @@ export default function TranscriptReaderModal({
           channelTitle: video.channel?.title || 'Channel',
           videoTitle: video.title,
           stars,
+          effort,
           comment
         });
         setSavedIdea(idea);
@@ -596,6 +597,7 @@ export default function TranscriptReaderModal({
                     channelTitle={video.channel?.title || 'Channel'}
                     videoTitle={video.title}
                     initialStars={ideaQuickOpen ? 1 : savedIdea?.stars || 0}
+                    initialEffort={savedIdea?.effort || ''}
                     initialComment={savedIdea?.comment || ''}
                     autoFocusComment={ideaQuickOpen}
                     onSave={handleIdeaSave}

@@ -38,6 +38,16 @@ export async function saveIdea(payload) {
   return data.idea;
 }
 
+export async function updateIdea(id, payload) {
+  const res = await apiFetch('/api/ideas', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, id })
+  });
+  const data = await parseJsonResponse(res, 'Failed to update idea');
+  return data.idea;
+}
+
 export async function deleteIdea(id) {
   const res = await apiFetch(`/api/ideas/${encodeURIComponent(id)}`, {
     method: 'DELETE'
