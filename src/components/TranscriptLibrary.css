@@ -304,7 +304,8 @@
   margin-left: auto;
 }
 
-.transcript-library-import-button {
+.transcript-library-import-button,
+.transcript-library-export-button {
   min-width: 12rem;
 }
 

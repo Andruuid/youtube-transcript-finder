@@ -20,6 +20,7 @@ import {
   importStructuredSummariesFromFolder,
   summarizeStructuredImportResult
 } from '../services/structuredSummaryImport';
+import { exportStructuredSummariesForChannels } from '../services/structuredSummaryExport';
 import { hasStructuredSummary } from '../utils/structuredSummaryUtils';
 
 const VIEW_MODE_STORAGE_KEY = 'transcriptLibraryViewMode';
@@ -118,6 +119,11 @@ export default function TranscriptLibrary() {
     message: '',
     error: '',
     partialFailures: false
+  });
+  const [summaryExport, setSummaryExport] = useState({
+    loading: false,
+    message: '',
+    error: ''
   });
   const [videoContextMenu, setVideoContextMenu] = useState(null);
   const persistSelectionRef = useRef(false);
@@ -478,6 +484,38 @@ export default function TranscriptLibrary() {
     }
   };
 
+  const handleExportStructuredSummaries = async () => {
+    if (selectedChannels.length === 0) return;
+
+    setSummaryExport({
+      loading: true,
+      message: 'Collecting structured summaries…',
+      error: ''
+    });
+    setError('');
+
+    try {
+      const payload = await exportStructuredSummariesForChannels(selectedChannels);
+      const channelLabel =
+        payload.channelCount === 1
+          ? selectedChannels[0].title
+          : `${payload.channelCount} channels`;
+      setSummaryExport({
+        loading: false,
+        message: `Exported ${payload.summaryCount} structured summar${
+          payload.summaryCount === 1 ? 'y' : 'ies'
+        } from ${channelLabel}.`,
+        error: ''
+      });
+    } catch (e) {
+      setSummaryExport({
+        loading: false,
+        message: '',
+        error: e.message || 'Structured summary export failed.'
+      });
+    }
+  };
+
   const handleImportStructuredSummaries = async () => {
     if (!singleChannelSelected) return;
     const channelId = selectedChannels[0].youtubeChannelId;
@@ -718,6 +756,15 @@ export default function TranscriptLibrary() {
                 </div>
                 <button
                   type="button"
+                  className="search-button transcript-library-export-button"
+                  onClick={handleExportStructuredSummaries}
+                  disabled={summaryExport.loading || videoPanelDisabled}
+                  title="Export all structured summaries from selected channels into one JSON file"
+                >
+                  {summaryExport.loading ? 'Exporting…' : 'Export Structured Summaries'}
+                </button>
+                <button
+                  type="button"
                   className="search-button transcript-library-import-button"
                   onClick={handleImportStructuredSummaries}
                   disabled={
@@ -744,6 +791,14 @@ export default function TranscriptLibrary() {
                   {bulkDownload.loading ? 'Downloading…' : 'Download Transcripts'}
                 </button>
               </div>
+              {summaryExport.error && (
+                <p className="error-message transcript-library-bulk-status">{summaryExport.error}</p>
+              )}
+              {summaryExport.message && (
+                <p className="transcript-library-bulk-status transcript-library-bulk-success">
+                  {summaryExport.message}
+                </p>
+              )}
               {summaryImport.error && (
                 <p className="error-message transcript-library-bulk-status">{summaryImport.error}</p>
               )}
