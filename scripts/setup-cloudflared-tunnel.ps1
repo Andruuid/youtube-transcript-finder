@@ -15,6 +15,17 @@ $ConfigPath = Join-Path $CloudflaredDir 'config.yml'
 
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 
+function Invoke-Cloudflared {
+  param([Parameter(Mandatory = $true)][string[]]$Args)
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    return (& cloudflared @Args 2>&1 | Out-String)
+  } finally {
+    $ErrorActionPreference = $prev
+  }
+}
+
 if (-not (Get-Command cloudflared -ErrorAction SilentlyContinue)) {
   Write-Error 'cloudflared is not installed. Download: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/'
 }
@@ -28,7 +39,7 @@ if (-not (Test-Path $CertPath)) {
 }
 
 Write-Step 'Checking for existing tunnel'
-$existing = cloudflared tunnel list 2>&1 | Out-String
+$existing = Invoke-Cloudflared -Args @('tunnel', 'list')
 $tunnelId = $null
 
 if ($existing -match "$TUNNEL_NAME\s+([0-9a-f-]{36})") {
@@ -36,13 +47,13 @@ if ($existing -match "$TUNNEL_NAME\s+([0-9a-f-]{36})") {
   Write-Host "Using existing tunnel '$TUNNEL_NAME' ($tunnelId)"
 } else {
   Write-Step "Creating tunnel '$TUNNEL_NAME'"
-  $createOut = cloudflared tunnel create $TUNNEL_NAME 2>&1 | Out-String
+  $createOut = Invoke-Cloudflared -Args @('tunnel', 'create', $TUNNEL_NAME)
   Write-Host $createOut
   if ($createOut -match '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})') {
     $tunnelId = $Matches[1]
   }
   if (-not $tunnelId) {
-    $listOut = cloudflared tunnel list 2>&1 | Out-String
+    $listOut = Invoke-Cloudflared -Args @('tunnel', 'list')
     if ($listOut -match "$TUNNEL_NAME\s+([0-9a-f-]{36})") {
       $tunnelId = $Matches[1]
     }
@@ -76,7 +87,7 @@ Set-Content -Path $ConfigPath -Value $config -Encoding UTF8
 Write-Host "Wrote $ConfigPath"
 
 Write-Step "Routing DNS: $HOSTNAME -> tunnel '$TUNNEL_NAME'"
-cloudflared tunnel route dns $TUNNEL_NAME $HOSTNAME
+Invoke-Cloudflared -Args @('tunnel', 'route', 'dns', $TUNNEL_NAME, $HOSTNAME) | Out-Null
 
 Write-Step 'Done'
 Write-Host @"

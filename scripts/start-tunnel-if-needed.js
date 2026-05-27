@@ -31,10 +31,18 @@ function getCloudflaredCommandLines() {
   if (process.platform === 'win32') {
     try {
       const ps =
-        "Get-CimInstance Win32_Process -Filter \"Name='cloudflared.exe'\" | ForEach-Object { $_.CommandLine }";
-      return execSync(`powershell -NoProfile -Command "${ps}"`, { encoding: 'utf8' });
+        "Get-CimInstance Win32_Process -Filter \"Name = 'cloudflared.exe'\" | ForEach-Object { $_.CommandLine }";
+      return execSync(`powershell -NoProfile -Command "${ps.replace(/"/g, '\\"')}"`, {
+        encoding: 'utf8'
+      });
     } catch {
-      return '';
+      try {
+        return execSync('tasklist /FI "IMAGENAME eq cloudflared.exe" /FO CSV /NH', {
+          encoding: 'utf8'
+        });
+      } catch {
+        return '';
+      }
     }
   }
 
