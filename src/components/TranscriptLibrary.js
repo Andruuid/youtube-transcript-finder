@@ -80,6 +80,18 @@ function sanitizeFilePart(value, fallback = 'untitled') {
   return cleaned || fallback;
 }
 
+function youtubeWatchUrl(videoId) {
+  return `https://www.youtube.com/watch?v=${videoId}`;
+}
+
+function handleVideoPrimaryClick(e, video, openModal) {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+    return;
+  }
+  e.preventDefault();
+  openModal(video);
+}
+
 export default function TranscriptLibrary() {
   const [channels, setChannels] = useState([]);
   const [selectedChannelIds, setSelectedChannelIds] = useState(
@@ -107,6 +119,7 @@ export default function TranscriptLibrary() {
     error: '',
     partialFailures: false
   });
+  const [videoContextMenu, setVideoContextMenu] = useState(null);
   const persistSelectionRef = useRef(false);
 
   const channelsWithTranscripts = useMemo(
@@ -225,6 +238,29 @@ export default function TranscriptLibrary() {
       // ignore storage errors
     }
   }, [viewMode]);
+
+  useEffect(() => {
+    if (!videoContextMenu) return undefined;
+
+    const dismiss = () => setVideoContextMenu(null);
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') dismiss();
+    };
+
+    window.addEventListener('click', dismiss);
+    window.addEventListener('scroll', dismiss, true);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('click', dismiss);
+      window.removeEventListener('scroll', dismiss, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [videoContextMenu]);
+
+  const openVideoInNewTab = useCallback((videoId) => {
+    window.open(youtubeWatchUrl(videoId), '_blank', 'noopener,noreferrer');
+    setVideoContextMenu(null);
+  }, []);
 
   const refreshVideos = useCallback(async () => {
     const ids = channelsWithTranscripts
@@ -751,10 +787,10 @@ export default function TranscriptLibrary() {
                         aria-label={`Select ${v.title}`}
                       />
                     </label>
-                    <button
-                      type="button"
+                    <a
+                      href={youtubeWatchUrl(v.youtubeVideoId)}
                       className="video-card transcript-library-card"
-                      onClick={() => setModalVideo(v)}
+                      onClick={(e) => handleVideoPrimaryClick(e, v, setModalVideo)}
                     >
                       {v.thumbnailUrl ? (
                         <img
@@ -788,7 +824,7 @@ export default function TranscriptLibrary() {
                           </div>
                         )}
                       </div>
-                    </button>
+                    </a>
                   </div>
                 ))}
               </div>
@@ -814,6 +850,14 @@ export default function TranscriptLibrary() {
                         key={v.youtubeVideoId}
                         className="transcript-library-table-row"
                         onClick={() => setModalVideo(v)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setVideoContextMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            video: v
+                          });
+                        }}
                       >
                         <td className="transcript-library-table-check">
                           <input
@@ -821,6 +865,7 @@ export default function TranscriptLibrary() {
                             checked={selectedVideoIds.has(v.youtubeVideoId)}
                             onChange={() => toggleVideoSelection(v.youtubeVideoId)}
                             onClick={(e) => e.stopPropagation()}
+                            onContextMenu={(e) => e.stopPropagation()}
                             aria-label={`Select ${v.title}`}
                           />
                         </td>
@@ -855,6 +900,26 @@ export default function TranscriptLibrary() {
         onSummarySaved={handleSummarySaved}
         structuredSummaryNavigation={structuredSummaryNav}
       />
+
+      {videoContextMenu && (
+        <ul
+          className="transcript-library-context-menu"
+          style={{ top: videoContextMenu.y, left: videoContextMenu.x }}
+          role="menu"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <li role="none">
+            <button
+              type="button"
+              role="menuitem"
+              className="transcript-library-context-menu-item"
+              onClick={() => openVideoInNewTab(videoContextMenu.video.youtubeVideoId)}
+            >
+              Open in new tab
+            </button>
+          </li>
+        </ul>
+      )}
     </div>
   );
 }
