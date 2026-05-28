@@ -35,6 +35,10 @@ import {
   isAuthenticated,
   setAccessCookie
 } from './src/middleware/accessAuth.js';
+import {
+  serializeVideoRows,
+  toVideoDetail
+} from './src/serializers/videoDto.js';
 
 const PORT = Number(
   process.env.TRANSCRIPT_SERVER_PORT || process.env.PORT || 3222
@@ -221,28 +225,35 @@ app.get('/api/channels', async (_req, res) => {
     include: {
       _count: {
         select: { videos: true }
-      },
-      videos: {
-        select: { hasTranscript: true }
       }
     },
     orderBy: { title: 'asc' }
   });
 
+  const downloadedRows = await prisma.video.groupBy({
+    by: ['channelId'],
+    where: { hasTranscript: true },
+    _count: { _all: true }
+  });
+  const downloadedByChannelId = new Map(
+    downloadedRows.map((row) => [row.channelId, row._count._all])
+  );
+
   void backfillMissingChannelThumbnails(channels);
 
   return res.json({
     channels: channels.map((channel) => {
-      const downloadedCount = channel.videos.filter((v) => v.hasTranscript).length;
+      const downloadedCount = downloadedByChannelId.get(channel.id) || 0;
+      const totalCount = channel._count.videos;
       return {
         youtubeChannelId: channel.youtubeChannelId,
         title: channel.title,
         handle: channel.handle,
         thumbnailUrl: formatChannelThumbnailUrl(channel),
         lastSyncedAt: channel.lastSyncedAt,
-        totalCount: channel._count.videos,
+        totalCount,
         downloadedCount,
-        undownloadedCount: channel._count.videos - downloadedCount
+        undownloadedCount: totalCount - downloadedCount
       };
     })
   });
@@ -306,6 +317,8 @@ app.get('/api/channels/:youtubeChannelId/videos', async (req, res) => {
       ? { hasTranscript: false }
       : {})
   };
+  const fields = String(req.query.fields || 'list').toLowerCase() === 'full' ? 'full' : 'list';
+
   const [items, total] = await Promise.all([
     prisma.video.findMany({
       where,
@@ -317,7 +330,24 @@ app.get('/api/channels/:youtubeChannelId/videos', async (req, res) => {
     prisma.video.count({ where })
   ]);
 
-  return res.json({ total, items });
+  return res.json({ total, items: serializeVideoRows(items, fields) });
+});
+
+app.get('/api/videos/:youtubeVideoId', async (req, res) => {
+  const youtubeVideoId = String(req.params.youtubeVideoId || '').trim();
+  if (!youtubeVideoId) {
+    return res.status(400).json({ error: 'Missing video id' });
+  }
+
+  const video = await prisma.video.findUnique({
+    where: { youtubeVideoId },
+    include: { channel: true }
+  });
+  if (!video) {
+    return res.status(404).json({ error: 'Video not found' });
+  }
+
+  return res.json({ video: toVideoDetail(video) });
 });
 
 app.post('/api/channels/:youtubeChannelId/import-structured-summaries', async (req, res) => {

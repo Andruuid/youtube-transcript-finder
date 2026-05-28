@@ -11,6 +11,7 @@ export function parseStructuredSummary(video) {
 }
 
 export function hasStructuredSummary(video) {
+  if (video?.hasStructuredSummary != null) return !!video.hasStructuredSummary;
   return parseStructuredSummary(video) != null;
 }
 

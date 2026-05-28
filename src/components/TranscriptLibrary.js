@@ -35,7 +35,12 @@ function readStoredViewMode() {
 }
 
 function hasSummary(video) {
-  return !!(video.sumShort?.trim() || video.sumLong?.trim());
+  return !!(
+    video.hasShortSummary ||
+    video.hasLongSummary ||
+    video.sumShort?.trim() ||
+    video.sumLong?.trim()
+  );
 }
 
 function mergeVideosById(items) {
@@ -298,19 +303,25 @@ export default function TranscriptLibrary() {
     };
 
     try {
-      let loaded = await loadVideos();
+      const loaded = await loadVideos();
+      setVideos(loaded);
+      setLoadingVideos(false);
+
       if (loaded.some((v) => v.durationSeconds == null)) {
         setBackfillingDurations(true);
-        try {
-          await backfillVideoDurations(ids);
-          loaded = await loadVideos();
-        } catch (backfillError) {
-          console.warn('[TranscriptLibrary] duration backfill failed', backfillError);
-        } finally {
-          setBackfillingDurations(false);
-        }
+        void (async () => {
+          try {
+            await backfillVideoDurations(ids);
+            const refreshed = await loadVideos();
+            setVideos(refreshed);
+          } catch (backfillError) {
+            console.warn('[TranscriptLibrary] duration backfill failed', backfillError);
+          } finally {
+            setBackfillingDurations(false);
+          }
+        })();
       }
-      setVideos(loaded);
+      return;
     } catch (e) {
       setError(e.message || 'Failed to load transcripts');
     } finally {

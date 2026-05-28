@@ -228,15 +228,39 @@ Input:\n` +
       </header>
 
       <main className="App-main">
-        {activeTab === 'channels' ? (
+        <div
+          className="app-tab-panel"
+          hidden={activeTab !== 'channels'}
+          aria-hidden={activeTab !== 'channels'}
+        >
           <ChannelMonitor />
-        ) : activeTab === 'library' ? (
+        </div>
+        <div
+          className="app-tab-panel"
+          hidden={activeTab !== 'library'}
+          aria-hidden={activeTab !== 'library'}
+        >
           <TranscriptLibrary />
-        ) : activeTab === 'ideas' ? (
+        </div>
+        <div
+          className="app-tab-panel"
+          hidden={activeTab !== 'ideas'}
+          aria-hidden={activeTab !== 'ideas'}
+        >
           <Ideas />
-        ) : activeTab === 'niches' ? (
+        </div>
+        <div
+          className="app-tab-panel"
+          hidden={activeTab !== 'niches'}
+          aria-hidden={activeTab !== 'niches'}
+        >
           <Niches />
-        ) : (
+        </div>
+        <div
+          className="app-tab-panel"
+          hidden={activeTab !== 'search'}
+          aria-hidden={activeTab !== 'search'}
+        >
           <>
         <div className="search-container">
           <input
@@ -410,7 +434,7 @@ Input:\n` +
           )}
         </div>
           </>
-        )}
+        </div>
       </main>
       
       <footer className="App-footer">

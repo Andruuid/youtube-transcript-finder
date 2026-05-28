@@ -65,7 +65,7 @@ export async function fetchStructuredSummaryVideosForChannels(channelIds) {
   if (!ids.length) return [];
 
   const batches = await Promise.all(
-    ids.map((id) => listAllChannelVideos(id, 'downloaded'))
+    ids.map((id) => listAllChannelVideos(id, 'downloaded', { fields: 'full' }))
   );
   return batches.flat();
 }

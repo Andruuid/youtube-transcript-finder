@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { fetchTranscriptText, summarizeTranscript } from '../services/libraryService';
+import {
+  fetchTranscriptText,
+  fetchVideoDetail,
+  summarizeTranscript
+} from '../services/libraryService';
 import { buildTranscriptHighlightModel } from '../utils/transcriptTextUtils';
 import {
   hasStructuredSummary,
@@ -270,10 +274,29 @@ export default function TranscriptReaderModal({
   const [ideaSaving, setIdeaSaving] = useState(false);
   const [ideaSaveError, setIdeaSaveError] = useState('');
   const ideaStarRef = useRef(null);
+  const [enrichedVideo, setEnrichedVideo] = useState(null);
+
+  const detailVideo = enrichedVideo ?? video;
+
+  useEffect(() => {
+    if (!video?.youtubeVideoId) {
+      setEnrichedVideo(null);
+      return undefined;
+    }
+    let cancelled = false;
+    fetchVideoDetail(video.youtubeVideoId)
+      .then((full) => {
+        if (!cancelled && full) setEnrichedVideo(full);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [video?.youtubeVideoId]);
 
   const structuredSummary = useMemo(
-    () => (video ? parseStructuredSummary(video) : null),
-    [video]
+    () => (detailVideo ? parseStructuredSummary(detailVideo) : null),
+    [detailVideo]
   );
   const showStructured = structuredSummary != null;
 
@@ -282,20 +305,20 @@ export default function TranscriptReaderModal({
     setError('');
     setSearch('');
     setHitIndex(0);
-    setContentView(hasStructuredSummary(video) ? 'structured' : 'transcript');
+    setContentView(hasStructuredSummary(detailVideo) ? 'structured' : 'transcript');
     setModalSummaries({
-      short: { text: video.sumShort || '', model: video.sumShortModel || '' },
-      long: { text: video.sumLong || '', model: video.sumLongModel || '' }
+      short: { text: detailVideo.sumShort || '', model: detailVideo.sumShortModel || '' },
+      long: { text: detailVideo.sumLong || '', model: detailVideo.sumLongModel || '' }
     });
-    setDisplayedSummaryTab(video.sumShort ? 'short' : video.sumLong ? 'long' : null);
+    setDisplayedSummaryTab(detailVideo.sumShort ? 'short' : detailVideo.sumLong ? 'long' : null);
     setSummarizeBusy(false);
     setSummarizeError('');
     setSummarizeVariant(null);
 
     const cached =
-      typeof video.transcriptText === 'string' && video.transcriptText.length > 0;
+      typeof detailVideo.transcriptText === 'string' && detailVideo.transcriptText.length > 0;
     if (cached) {
-      setTranscriptText(video.transcriptText);
+      setTranscriptText(detailVideo.transcriptText);
       setLoading(false);
       return;
     }
@@ -317,7 +340,7 @@ export default function TranscriptReaderModal({
     return () => {
       cancelled = true;
     };
-  }, [video]);
+  }, [video, detailVideo]);
 
   useEffect(() => {
     if (!video?.youtubeVideoId || !showStructured) {

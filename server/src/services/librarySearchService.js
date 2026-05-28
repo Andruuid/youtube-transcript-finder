@@ -1,4 +1,5 @@
 import { prisma } from '../db/prismaClient.js';
+import { toVideoListItem } from '../serializers/videoDto.js';
 
 function parseQuery(query) {
   const str = String(query || '').trim();
@@ -168,9 +169,8 @@ export async function searchLibrary({
 
   return {
     total,
-    items: page.map(({ video, matchSource }) => ({
-      ...video,
-      matchSource
-    }))
+    items: page.map(({ video, matchSource }) =>
+      toVideoListItem(video, { matchSource })
+    )
   };
 }

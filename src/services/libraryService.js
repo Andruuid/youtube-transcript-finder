@@ -41,14 +41,16 @@ export async function listChannelVideosPage(
   youtubeChannelId,
   status = 'all',
   skip = 0,
-  take = 200
+  take = 200,
+  { fields = 'list' } = {}
 ) {
   const cappedTake = Math.min(Math.max(Number(take) || 200, 1), 200);
   const safeSkip = Math.max(Number(skip) || 0, 0);
   const qp = new URLSearchParams({
     status,
     skip: String(safeSkip),
-    take: String(cappedTake)
+    take: String(cappedTake),
+    fields: fields === 'full' ? 'full' : 'list'
   });
   const res = await apiFetch(`/api/channels/${encodeURIComponent(youtubeChannelId)}/videos?${qp}`);
   const data = await parseJsonResponse(res, 'Failed to load channel videos');
@@ -68,13 +70,19 @@ export async function getChannelVideoTotal(youtubeChannelId, status = 'all') {
   return total;
 }
 
-export async function listAllChannelVideos(youtubeChannelId, status = 'all') {
+export async function listAllChannelVideos(
+  youtubeChannelId,
+  status = 'all',
+  { fields = 'list' } = {}
+) {
   const take = 200;
   let skip = 0;
   const out = [];
   let total = Infinity;
   while (skip < total) {
-    const page = await listChannelVideosPage(youtubeChannelId, status, skip, take);
+    const page = await listChannelVideosPage(youtubeChannelId, status, skip, take, {
+      fields
+    });
     total = page.total;
     out.push(...page.items);
     if (page.items.length === 0) break;
@@ -136,6 +144,13 @@ export async function apiFetchTranscriptText(videoId) {
 
 /** @deprecated Prefer {@link apiFetchTranscriptText}. */
 export const fetchTranscriptText = apiFetchTranscriptText;
+
+/** Full video row for modals and export (includes transcript and summary blobs). */
+export async function fetchVideoDetail(youtubeVideoId) {
+  const res = await apiFetch(`/api/videos/${encodeURIComponent(youtubeVideoId)}`);
+  const data = await parseJsonResponse(res, 'Failed to load video');
+  return data.video || null;
+}
 
 /**
  * Summarizes transcript via OpenRouter (server holds API key and prompts).
