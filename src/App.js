@@ -438,7 +438,18 @@ Input:\n` +
       </main>
       
       <footer className="App-footer">
-        <p>Market Research Tool &copy; {new Date().getFullYear()}</p>
+        <p>
+          Market Research Tool &copy; {new Date().getFullYear()}
+          {' · '}
+          Stress-test ideas and messaging with{' '}
+          <a
+            className="App-footer-link"
+            href="https://multiagentdebates.com/"
+            rel="noopener"
+          >
+            MAD Studio — multi-agent debate platform
+          </a>
+        </p>
       </footer>
     </div>
   );

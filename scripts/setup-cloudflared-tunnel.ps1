@@ -45,6 +45,9 @@ $tunnelId = $null
 if ($existing -match "$TUNNEL_NAME\s+([0-9a-f-]{36})") {
   $tunnelId = $Matches[1]
   Write-Host "Using existing tunnel '$TUNNEL_NAME' ($tunnelId)"
+} elseif ($existing -match "([0-9a-f-]{36})\s+$TUNNEL_NAME\b") {
+  $tunnelId = $Matches[1]
+  Write-Host "Using existing tunnel '$TUNNEL_NAME' ($tunnelId)"
 } else {
   Write-Step "Creating tunnel '$TUNNEL_NAME'"
   $createOut = Invoke-Cloudflared -Args @('tunnel', 'create', $TUNNEL_NAME)
@@ -55,6 +58,8 @@ if ($existing -match "$TUNNEL_NAME\s+([0-9a-f-]{36})") {
   if (-not $tunnelId) {
     $listOut = Invoke-Cloudflared -Args @('tunnel', 'list')
     if ($listOut -match "$TUNNEL_NAME\s+([0-9a-f-]{36})") {
+      $tunnelId = $Matches[1]
+    } elseif ($listOut -match "([0-9a-f-]{36})\s+$TUNNEL_NAME\b") {
       $tunnelId = $Matches[1]
     }
   }
@@ -87,7 +92,7 @@ Set-Content -Path $ConfigPath -Value $config -Encoding UTF8
 Write-Host "Wrote $ConfigPath"
 
 Write-Step "Routing DNS: $HOSTNAME -> tunnel '$TUNNEL_NAME'"
-Invoke-Cloudflared -Args @('tunnel', 'route', 'dns', $TUNNEL_NAME, $HOSTNAME) | Out-Null
+Invoke-Cloudflared -Args @('tunnel', 'route', 'dns', '--overwrite-dns', $TUNNEL_NAME, $HOSTNAME) | Out-Null
 
 Write-Step 'Done'
 Write-Host @"
