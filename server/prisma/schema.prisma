@@ -12,6 +12,8 @@ model Channel {
   youtubeChannelId String   @unique
   title            String
   handle           String?
+  /** YouTube's low-quota uploads playlist used to page channel videos. */
+  uploadsPlaylistId String?
   /** Original YouTube thumbnail URL (used to refresh stored image). */
   thumbnailUrl     String?
   thumbnailData    Bytes?
@@ -20,8 +22,23 @@ model Channel {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   videos           Video[]
+  politicsMembership PoliticsChannel?
 
   @@index([title])
+}
+
+model PoliticsChannel {
+  id        Int      @id @default(autoincrement())
+  channelId Int      @unique
+  /** User-assigned corpus side. Validated as "left" or "right" by the API. */
+  side      String
+  /** Zero-based display order within a side. */
+  position  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Restrict)
+
+  @@index([side, position])
 }
 
 model Video {

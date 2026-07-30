@@ -6,6 +6,7 @@ import ChannelMonitor from './components/ChannelMonitor';
 import TranscriptLibrary from './components/TranscriptLibrary';
 import Ideas from './components/Ideas';
 import Niches from './components/Niches';
+import Politics from './components/Politics';
 import {
   searchVideos,
   getVideoDetails,
@@ -255,6 +256,13 @@ Input:\n` +
           aria-hidden={activeTab !== 'niches'}
         >
           <Niches />
+        </div>
+        <div
+          className="app-tab-panel"
+          hidden={activeTab !== 'politics'}
+          aria-hidden={activeTab !== 'politics'}
+        >
+          <Politics />
         </div>
         <div
           className="app-tab-panel"
