@@ -130,20 +130,28 @@ export async function resolveChannel(rawInput) {
 
 export async function fetchChannelVideos(youtubeChannelId, limit = 50, pageToken = '') {
   const cappedLimit = Math.min(Math.max(Number(limit) || 50, 1), 50);
+  const channelData = await fetchYouTube('channels', {
+    part: 'contentDetails',
+    id: youtubeChannelId
+  });
+  const uploadsPlaylistId =
+    channelData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+  if (!uploadsPlaylistId) {
+    throw new Error('Could not find the channel uploads playlist');
+  }
+
   const params = {
-    part: 'snippet',
-    channelId: youtubeChannelId,
-    order: 'date',
-    type: 'video',
+    part: 'contentDetails',
+    playlistId: uploadsPlaylistId,
     maxResults: String(cappedLimit)
   };
   if (pageToken) params.pageToken = pageToken;
-  const searchData = await fetchYouTube('search', params);
-  const ids = (searchData.items || [])
-    .map((it) => it.id?.videoId)
+  const playlistData = await fetchYouTube('playlistItems', params);
+  const ids = (playlistData.items || [])
+    .map((item) => item.contentDetails?.videoId)
     .filter(Boolean);
   if (!ids.length) {
-    return { videos: [], nextPageToken: searchData.nextPageToken || null };
+    return { videos: [], nextPageToken: playlistData.nextPageToken || null };
   }
 
   const videosData = await fetchYouTube('videos', {
@@ -163,5 +171,5 @@ export async function fetchChannelVideos(youtubeChannelId, limit = 50, pageToken
       durationSeconds: iso8601DurationToSeconds(video.contentDetails?.duration) || null
     }));
 
-  return { videos, nextPageToken: searchData.nextPageToken || null };
+  return { videos, nextPageToken: playlistData.nextPageToken || null };
 }
