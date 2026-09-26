@@ -19,6 +19,20 @@
 
 Channel import and sync call the backend server, which reads `YOUTUBE_API_KEY` from `server/.env`. If that value is missing or still the placeholder, imports fail with `API key not valid`.
 
+## Collecting older transcripts
+
+Channel Monitor's **Deep catalog + transcripts** defaults to the newest **1,000**
+videos (adjustable from 1 to 1,000). The target includes videos already saved;
+rerunning it fills missing transcripts rather than collecting another batch.
+Channel Monitor loads all stored catalog pages. Use **Clear range** to show older
+videos outside its default seven-day view.
+
+A count of 1,000 does not guarantee coverage back to a particular year. For Ivan
+on Tech history back through 2022, select the channel in **Crypto**, set the start
+date to **2022-01-01**, and click **Import history**. This existing date-based import
+pages back to the chosen date and downloads missing transcripts for videos at
+least three minutes long with known durations, preserving saved transcripts.
+
 ## Crypto research
 
 The **Crypto** tab compares up to three saved Channel Monitor channels with BTC,

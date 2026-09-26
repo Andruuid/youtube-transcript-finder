@@ -61,6 +61,20 @@ test('refreshes enough newest catalog pages even when rows already exist', async
   expect(result.catalogVideosVisited).toBe(120);
 });
 
+test('collects 1,000 newest videos across 20 sequential catalog pages', async () => {
+  syncChannel.mockImplementation(async (_channel, _limit, pageToken) => {
+    const page = pageToken ? Number(pageToken) : 0;
+    return { syncedVideos: 50, totalCount: (page + 1) * 50, nextPageToken: String(page + 1) };
+  });
+
+  const result = await ensureCatalogDepth('UC123', 'UC123', 1000);
+
+  expect(result.catalogVideosVisited).toBe(1000);
+  expect(syncChannel.mock.calls.map(call => call[2])).toEqual([
+    '', ...Array.from({ length: 19 }, (_, i) => String(i + 1))
+  ]);
+});
+
 test('keeps scanning until enough videos meet the minimum duration', async () => {
   syncChannel
     .mockResolvedValueOnce({

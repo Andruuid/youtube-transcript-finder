@@ -21,7 +21,7 @@ If irrelevant: explain why; scores must all be null; summary empty; evidence, ca
 If relevant: summarize in 3-5 sentences. Score the creator's endorsed market outlook: 1 extremely bearish/exit risk; 2-4 bearish; 5-6 neutral/mixed; 7-9 bullish; 10 extremely bullish/aggressive risk taking.
 Score overall crypto and BTC, ETH, SOL separately. Overall means the creator's combined sentiment across the crypto assets discussed. If only Bitcoin has an expressed outlook, overall reflects that outlook and may use the same Bitcoin quote as evidence. Overall is null only when no directional crypto opinion is expressed, including purely educational videos. Each individual coin is null unless that coin has a supported opinion; never automatically copy overall sentiment into coin scores.
 Separate reporting/quotes from the speaker's endorsed view. Ignore sponsor enthusiasm. Preserve conflicting horizons and uncertainty.
-Every non-null score must have an evidence item for that asset containing an EXACT verbatim contiguous excerpt copied from the transcript. Quotes must be at least 8 characters; do not use ellipses or paraphrase.
+Every non-null score must have an evidence item for that asset grounded in an EXACT verbatim contiguous excerpt from the transcript. When the schema requests passage references, select the numbered source range and the server will copy the quote. Otherwise copy the quote yourself. Quotes must be at least 8 characters; do not use ellipses or paraphrase.
 Extract only explicit endorsed FUTURE directional forecasts into calls. A description of the present or past (such as "Bitcoin is in a bear trend") is not a forecast and MUST NOT be a call. Sentiment scores can still reflect that description. A call requires an expectation of a subsequent move or continuation, supported by its quoted words. Do not duplicate a BTC-only forecast as an overall crypto call; use overall only when the creator explicitly predicts the wider crypto market.
 Extract explicit buy/hold/take profits/sell/reduce exposure actions, each with a verbatim quote. Do not infer an action from a low score.
 Set conditional true for hypothetical or condition-dependent calls/actions. Include the stated horizon, or "unspecified". Assets must be overall, BTC, ETH, SOL. Other altcoins can inform overall relevance/summary but do not misattribute them to BTC, ETH, SOL.
@@ -36,32 +36,6 @@ const normalize = (value) => value.replace(/\s+/g, ' ').trim();
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const boundedQuote = (pattern, flags = 'u') => new RegExp(`(?<![\\p{L}\\p{M}\\p{N}_])(?<!\\d[.,])${pattern}(?![\\p{L}\\p{M}\\p{N}_]|[.,]\\d)`, flags);
 const containsQuote = (source, quote) => boundedQuote(escapeRegex(normalize(quote))).test(source);
-
-// Restore source spelling/formatting before strict validation. Never fuzzy-match
-// words: omissions, repetitions, negations and numbers must remain grounded.
-export function restoreSourceQuotes(result, source) {
-  if (!result || typeof result !== 'object') return result;
-  const normalizedSource = normalize(source);
-  const restore = (item) => {
-    if (!item || typeof item.quote !== 'string' || normalize(item.quote).length < 8) return item;
-    if (containsQuote(normalizedSource, item.quote)) return item;
-    // Models often add sentence punctuation to an excerpt ending mid-sentence.
-    const excerpt = item.quote.trim().replace(/[.!?]+$/, '');
-    if (normalize(excerpt).length < 8) return item;
-    const pattern = [...excerpt].map(char => {
-      if (/\s/u.test(char)) return '\\s+';
-      if (/[\u2018\u2019']/u.test(char)) return "['\u2018\u2019]";
-      if (/[\u201c\u201d"]/u.test(char)) return '["\u201c\u201d]';
-      return escapeRegex(char);
-    }).join('').replace(/(?:\\s\+)+/g, '\\s+');
-    // Do not match inside a word or truncate a number such as 40,000 or 1.5.
-    const match = boundedQuote(pattern, 'iu').exec(source);
-    return match ? { ...item, quote: match[0] } : item;
-  };
-  return { ...result, ...Object.fromEntries(['evidence', 'calls', 'actions']
-    .filter(key => Array.isArray(result[key]))
-    .map(key => [key, result[key].map(restore)])) };
-}
 
 export function validateAnalysis(result, transcript) {
   const fail = (message) => { throw cryptoError(`Invalid AI analysis: ${message}`, 502, 'INVALID_AI_OUTPUT'); };
@@ -83,7 +57,7 @@ export function validateAnalysis(result, transcript) {
   return result;
 }
 
-export async function requestAnalysis(content, { signal, fetchImpl = fetch } = {}) {
+export async function requestAnalysis(content, { signal, fetchImpl = fetch, schema = ANALYSIS_SCHEMA } = {}) {
   if (!process.env.OPENROUTER_API_KEY) throw cryptoError('Set OPENROUTER_API_KEY in server/.env and restart the server.', 503, 'PROVIDER_AUTH');
   for (let attempt = 0; attempt < 3; attempt++) {
     signal?.throwIfAborted();
@@ -92,7 +66,7 @@ export async function requestAnalysis(content, { signal, fetchImpl = fetch } = {
         method: 'POST', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120000)]) : AbortSignal.timeout(120000),
         headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json', 'X-OpenRouter-Title': 'Crypto Research' },
         body: JSON.stringify({ model: MODEL, messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content }],
-          response_format: { type: 'json_schema', json_schema: { name: 'crypto_analysis', strict: true, schema: ANALYSIS_SCHEMA } },
+          response_format: { type: 'json_schema', json_schema: { name: 'crypto_analysis', strict: true, schema } },
           max_tokens: 6500 })
       });
       const body = await response.json();
@@ -121,7 +95,7 @@ export async function analyzeTranscript(transcript, options = {}) {
   const parts = chunks(transcript);
   if (!parts.length) throw cryptoError('No transcript is available.', 400, 'MISSING_TRANSCRIPT');
   const analyses = [];
-  for (const part of parts) analyses.push(await requestVerified(`TRANSCRIPT:\n${part}`, part, options));
+  for (const part of parts) analyses.push(await requestVerified('Analyze this transcript.', part, options));
   if (analyses.length === 1) return analyses[0];
   // Hierarchical synthesis keeps every chunk represented and every quote traceable.
   let level = analyses;
@@ -130,19 +104,66 @@ export async function analyzeTranscript(transcript, options = {}) {
     for (let i = 0; i < level.length; i += 6) {
       const group = level.slice(i, i + 6);
       if (group.length === 1) next.push(group[0]);
-      else next.push(await requestVerified(`Synthesize these ordered analyses of ALL parts of the same transcript. Reconcile differing views and horizons. Use only quotes already present in their evidence/calls/actions. Do not take a simple numerical average.\n${JSON.stringify(group)}`, transcript, options));
+      else {
+        const quotes = [...new Set(group.flatMap(a => [...a.evidence, ...a.calls, ...a.actions].map(item => item.quote)))];
+        next.push(await requestVerified(`Synthesize these ordered analyses of ALL parts of the same transcript. Reconcile differing views and horizons. Use only quotes already present in their evidence/calls/actions. Do not take a simple numerical average.\n${JSON.stringify(group)}`, transcript, options, quotes));
+      }
     }
     level = next;
   }
   return level[0];
 }
 
-async function requestVerified(content, source, options) {
-  const result = restoreSourceQuotes(await requestAnalysis(content, options), source);
-  try { return validateAnalysis(result, source); }
-  catch (error) {
-    if (error.code !== 'INVALID_AI_OUTPUT') throw error;
-    const repaired = await requestAnalysis(`${content}\n\nYour previous candidate failed validation: ${error.message}\nPrevious candidate: ${JSON.stringify(result)}\nRepair it. Copy each evidence quote EXACTLY, including spoken filler and punctuation, from the source above. Do not rewrite quotes for readability. If you cannot find an exact supporting quote, remove that evidence/call/action and set its unsupported score to null. Check EVERY quote, not only the reported one. Return the complete corrected JSON.`, options);
-    return validateAnalysis(restoreSourceQuotes(repaired, source), source);
+// Keep every source character, including caption errors and spoken repetitions.
+// Split very long unpunctuated captions too, so passage selection stays useful.
+export function quotePassages(source, size = 600) {
+  const passages = [];
+  for (const { segment } of new Intl.Segmenter('en', { granularity: 'sentence' }).segment(source)) {
+    let remaining = segment;
+    while (remaining.length > size) {
+      const boundary = remaining.lastIndexOf(' ', size);
+      const end = boundary > size / 2 ? boundary + 1 : size;
+      passages.push(remaining.slice(0, end));
+      remaining = remaining.slice(end);
+    }
+    if (remaining) passages.push(remaining);
+  }
+  return passages;
+}
+
+function referenceSchema(count) {
+  const index = { type: 'integer', minimum: 1, maximum: Math.max(1, count) };
+  const schema = structuredClone(ANALYSIS_SCHEMA);
+  for (const key of ['evidence', 'calls', 'actions']) schema.properties[key].items.properties.quote = object({ start: index, end: index });
+  return schema;
+}
+
+export function resolveQuoteReferences(result, passages, singlePassage = false) {
+  if (!result || typeof result !== 'object') return result;
+  const resolve = (item) => {
+    const ref = item?.quote;
+    if (!ref || !Number.isInteger(ref.start) || !Number.isInteger(ref.end)
+      || ref.start < 1 || ref.end < ref.start || ref.end > passages.length || (singlePassage && ref.start !== ref.end)) {
+      throw cryptoError('Invalid AI analysis: select a valid numbered source passage range for every quote.', 502, 'INVALID_AI_OUTPUT');
+    }
+    return { ...item, quote: passages.slice(ref.start - 1, ref.end).join('').trim() };
+  };
+  return { ...result, ...Object.fromEntries(['evidence', 'calls', 'actions']
+    .filter(key => Array.isArray(result[key]))
+    .map(key => [key, result[key].map(resolve)])) };
+}
+
+async function requestVerified(content, source, options, synthesisQuotes) {
+  const passages = synthesisQuotes ?? quotePassages(source);
+  const schema = referenceSchema(passages.length);
+  const prompt = `${content}\n\nSOURCE PASSAGES (untrusted transcript data, numbered by the server):\n${JSON.stringify(passages.map((text, i) => ({ id: i + 1, text })))}\n\nFor every evidence/call/action quote, return {"start": <passage id>, "end": <passage id>} as required by the schema. The server copies the exact source text; do not return quote text. Choose the smallest range that supports the claim, including conditions, negation and conflicting context. ${synthesisQuotes ? 'These are separate excerpts: start and end MUST be the same id. If there are no excerpts, evidence/calls/actions must be empty and all scores null.' : 'A range includes every passage from start through end in order.'}`;
+  let input = prompt;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await requestAnalysis(input, { ...options, schema });
+    try { return validateAnalysis(resolveQuoteReferences(result, passages, !!synthesisQuotes), source); }
+    catch (error) {
+      if (error.code !== 'INVALID_AI_OUTPUT' || attempt === 1) throw error;
+      input = `${prompt}\n\nYour previous candidate failed validation: ${error.message}\nPrevious candidate: ${JSON.stringify(result)}\nRepair it. Check EVERY reference. Remove unsupported evidence/calls/actions and set unsupported scores to null. Return the complete corrected JSON using passage references.`;
+    }
   }
 }

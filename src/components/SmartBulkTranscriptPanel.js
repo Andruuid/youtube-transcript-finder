@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { syncCatalogThenFetchMissingTranscripts } from '../services/channelBulkPipeline';
 
 const TARGET_MIN = 1;
-const TARGET_MAX = 500;
+const TARGET_MAX = 1000;
 
 export default function SmartBulkTranscriptPanel({
   youtubeChannelId,
@@ -12,7 +12,7 @@ export default function SmartBulkTranscriptPanel({
   onBusyChange,
   onFinished
 }) {
-  const [targetCount, setTargetCount] = useState(200);
+  const [targetCount, setTargetCount] = useState(1000);
   const [busy, setBusy] = useState(false);
   const [line, setLine] = useState('');
   const [error, setError] = useState('');
@@ -87,8 +87,14 @@ export default function SmartBulkTranscriptPanel({
       <p className="channel-smart-bulk-help">
         Loads up to your target count of <strong>newest</strong> videos from YouTube using sequential
         pages (50 per API call). Then downloads transcripts only for rows that do not have one yet—so
-        if 100 of 200 are already saved, only the remaining 100 are fetched. Runs on the channel you
+        if 200 of 1,000 are already saved, only the remaining 800 are fetched. Runs on the channel you
         focus in the sidebar (click the channel name; checking the box also focuses that row).
+      </p>
+      <p className="channel-smart-bulk-help">
+        The target is a total, not an additional batch. Up to 1,000 newest videos may not reach a
+        specific year. For history back to 2022, select the channel in Crypto, set the start date
+        to January 1, 2022, and use Import history. Clear the published date range here to see
+        older stored videos.
       </p>
       <div className="channel-smart-bulk-row">
         <label className="channel-smart-bulk-label" htmlFor="smart-bulk-target">

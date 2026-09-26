@@ -17,8 +17,8 @@ test('durable Crypto pipeline: restart recovery, deduplication, retries, revisio
   const transcript = 'I think Bitcoin is going higher. I am buying Bitcoin.';
   let modelCalls = 0, invalid = false, catalogCalls = 0, hold = false, unauthorized = false;
   const result = { relevant: true, reason: 'Bitcoin outlook', summary: 'The speaker is bullish on Bitcoin.', scores: { overall: 8, BTC: 8, ETH: null, SOL: null }, confidence: .9,
-    evidence: ['overall','BTC'].map(asset => ({ asset, quote: transcript, explanation: 'Direct opinion' })),
-    calls: [{asset:'overall', direction:'bullish', horizon:'unspecified', conditional:false, quote:transcript}], actions:[] };
+    evidence: ['overall','BTC'].map(asset => ({ asset, quote: {start:1,end:2}, explanation: 'Direct opinion' })),
+    calls: [{asset:'overall', direction:'bullish', horizon:'unspecified', conditional:false, quote:{start:1,end:2}}], actions:[] };
   globalThis.fetch = async (url, options) => {
     if (String(url).includes('openrouter.ai')) {
       modelCalls++;

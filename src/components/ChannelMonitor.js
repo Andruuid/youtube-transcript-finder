@@ -12,7 +12,7 @@ import {
   downloadTranscript,
   fetchTranscriptText,
   listChannels,
-  listChannelVideos,
+  listAllChannelVideos,
   removeChannel,
   searchLibrary,
   syncChannel
@@ -247,7 +247,7 @@ export default function ChannelMonitor() {
       return mergeVideosById(filtered);
     }
     const batches = await Promise.all(
-      ids.map((id) => listChannelVideos(id, statusFilter))
+      ids.map((id) => listAllChannelVideos(id, statusFilter))
     );
     return mergeVideosById(batches.flat());
   }, [channels, selectedChannelIds, searchTerm, statusFilter]);
