@@ -30,7 +30,7 @@ export function buildChartSeries({ points, channels, prices, coins, series, mode
       data: days.map(d => [d, daily.has(d) ? daily.get(d).reduce((a, b) => a + b, 0) / daily.get(d).length : null]),
       symbol: 'none', connectNulls: false, lineStyle: { width: 2, color, opacity: 0.65 }, itemStyle: { color },
       markLine: i === 0 ? { silent: true, symbol: 'none', label: { show: false }, lineStyle: { color: '#6f7e8d', opacity: 0.5 }, data: [{ yAxis: 5.5 }] } : undefined });
-    result.push({ id: `videos-${channel.channelId}`, name: channel.title, type: 'scatter', yAxisIndex: 0,
+    result.push({ id: `videos-${channel.channelId}`, name: channel.title, type: 'scatter', yAxisIndex: 0, z: 10,
       data: rows.filter(p => value(p) != null).map(p => ({ value: [Date.parse(p.publishedAt), value(p)], analysisId: p.id, title: p.title,
         raw: p.scores[series], baseline: p.calibration?.[series]?.baseline, warnings: p.warnings.filter(w => w.asset === series).length,
         itemStyle: { color: p.warnings.some(w => w.asset === series) ? '#fa947f' : color }, symbol: p.warnings.some(w => w.asset === series) ? 'diamond' : 'circle' })),
@@ -39,7 +39,7 @@ export function buildChartSeries({ points, channels, prices, coins, series, mode
   const candleMaps = Object.fromEntries(coins.map(coin => [coin, new Map((prices[coin]?.candles || []).map(c => [Date.parse(c.day), c.close]))]));
   const commonStart = coins.length > 1 ? days.find(d => coins.every(c => candleMaps[c].has(d))) : null;
   coins.forEach(coin => {
-    result.push({ id: `price-${coin}`, name: coins.length > 1 ? `${coin} · indexed` : `${coin} · USD`, type: 'line', yAxisIndex: 1,
+    result.push({ id: `price-${coin}`, name: coins.length > 1 ? `${coin} · indexed` : `${coin} · USD`, type: 'line', yAxisIndex: 1, z: 1,
       data: days.map(d => [d, !candleMaps[coin].has(d) || (coins.length > 1 && (commonStart == null || d < commonStart)) ? null :
         coins.length > 1 ? candleMaps[coin].get(d) / candleMaps[coin].get(commonStart) * 100 : candleMaps[coin].get(d)]),
       connectNulls: false, showSymbol: false, lineStyle: { color: COIN_COLORS[coin], width: 2, opacity: 0.85 }, itemStyle: { color: COIN_COLORS[coin] },

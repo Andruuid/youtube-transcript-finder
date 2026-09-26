@@ -21,6 +21,7 @@ test('multiple videos retain individual evidence points and create one daily mea
   ]});
   expect(lines[0].data.map(d=>d[1])).toEqual([6,null,null]);
   expect(lines[1].data.map(d=>d.analysisId)).toEqual([1,2]);
+  expect(lines[1].z).toBe(10);
   expect(lines[1].data[1].symbol).toBe('diamond');
 });
 test('relative tone never falls back to raw scores when calibration is unavailable',()=>{
