@@ -15,6 +15,7 @@ import {
   iso8601DurationToSeconds
 } from './services/youtubeService';
 import { processTranscript } from './services/geminiService';
+const Crypto = React.lazy(() => import('./components/Crypto'));
 
 function App() {
   const [activeTab, setActiveTab] = useState('channels');
@@ -221,7 +222,7 @@ Input:\n` +
   };
 
   return (
-    <div className="App">
+    <div className={`App${activeTab === 'crypto' ? ' crypto-active' : ''}`}>
       <header className="App-header">
         <h1>Market Research Tool</h1>
         <p>{viewSubtitle(activeTab)}</p>
@@ -229,6 +230,7 @@ Input:\n` +
       </header>
 
       <main className="App-main">
+        {activeTab === 'crypto' && <React.Suspense fallback={<p>Loading Crypto research…</p>}><Crypto /></React.Suspense>}
         <div
           className="app-tab-panel"
           hidden={activeTab !== 'channels'}

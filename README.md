@@ -19,7 +19,63 @@
 
 Channel import and sync call the backend server, which reads `YOUTUBE_API_KEY` from `server/.env`. If that value is missing or still the placeholder, imports fail with `API key not valid`.
 
-## Local development
+## Crypto research
+
+The **Crypto** tab compares up to three saved Channel Monitor channels with BTC,
+ETH and SOL daily prices. Ivan on Tech is selected initially when present.
+
+- **Analyze** uses saved transcripts at least 180 seconds long. It calls
+  `openai/gpt-6-luna` through the existing server `OPENROUTER_API_KEY`; there is no
+  model fallback. Unchanged successful analyses are reused. The pending count is
+  displayed before starting. This action incurs OpenRouter usage charges.
+- **Import history** independently imports the selected channels' catalogs and
+  missing transcripts back to the selected start date (January 2021 by default).
+  Downloads use the same YouTube configuration as Channel Monitor. Unavailable
+  transcripts and unknown durations remain visibly excluded.
+- **Calibrate** saves a versioned profile from analyzed transcripts. Historical
+  relative scores use only the preceding 365 days and require 20 earlier scores
+  per channel/asset. Manual overrides are available in baseline settings and do
+  not change raw scores or outcome calculations.
+- Click a chart point or ledger entry to inspect summaries, exact transcript
+  evidence, explicit forecasts/actions, and the full saved transcript.
+- Select a 7/30/90-day outcome window. Entry is the first UTC daily open strictly
+  after publication; exit is the close of the final day. Conditional, conflicting,
+  neutral, and merely descriptive statements are excluded from forecast accuracy.
+  General crypto forecasts use BTC; coin-specific forecasts use that asset.
+  Returns describe the asset, not a simulated trading strategy.
+
+Jobs survive tab changes and checkpoint their progress in SQLite. Restarted work
+is paused and can be resumed; provider authentication/quota failures pause work.
+Stop preserves completed results; retry failed items from the progress panel.
+Run a single API server against a database so there is one job worker.
+
+Prices are cached from Coinbase Exchange, with daily USD coverage displayed for
+each coin. Missing days (including SOL before its listing) are not invented. Price
+history refreshes independently of AI work. Multiple overlays are indexed to 100
+on the first shared available date. Historical reconstruction and small sample
+sizes do not establish predictive skill.
+
+After pulling the feature, back up the configured SQLite database and apply the
+additive migration, then restart the API:
+
+```powershell
+cd server
+npx prisma migrate deploy
+npx prisma generate
+```
+
+The `/api/crypto` routes use the existing access gate: `GET /coverage`,
+`GET /dashboard`, `GET /analyses`, `GET /analyses/:id`, `GET /jobs`,
+`POST /jobs`, `POST /jobs/:id/{stop,resume,retry}`, and
+`PATCH /calibration/:channelId`. Selection requests take `channelIds` (1–3 saved
+YouTube IDs), `from`, and `to` (UTC dates). Dashboard requests also accept
+`series=overall|BTC|ETH|SOL` and `horizon=7|30|90`. Job kinds are `analysis`,
+`calibration`, `history`, and `prices`.
+
+Crypto backend tests include an isolated temporary database and mocked providers;
+they never modify the live library or call paid AI services.
+
+## Running locally
 
 ### YouTube transcript sign-in
 

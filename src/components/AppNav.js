@@ -3,6 +3,7 @@ import './AppNav.css';
 
 export const APP_VIEWS = [
   { id: 'channels', label: 'Channel monitor' },
+  { id: 'crypto', label: 'Crypto' },
   { id: 'library', label: 'Transcript library' },
   { id: 'ideas', label: 'Ideas' },
   { id: 'niches', label: 'Niches' },
@@ -16,6 +17,8 @@ export function viewSubtitle(viewId) {
       return 'Search for YouTube videos with available transcripts';
     case 'channels':
       return 'Persistent channel library with downloaded transcript tracking';
+    case 'crypto':
+      return 'Compare creator conviction with crypto market outcomes';
     case 'library':
       return 'Browse downloaded transcripts by channel';
     case 'ideas':

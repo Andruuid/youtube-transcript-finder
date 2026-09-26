@@ -23,6 +23,9 @@ model Channel {
   updatedAt        DateTime @updatedAt
   videos           Video[]
   politicsMembership PoliticsChannel?
+  cryptoAnalyses CryptoAnalysis[]
+  cryptoCalibrations CryptoCalibration[]
+  cryptoSettings CryptoChannelSettings?
 
   @@index([title])
 }
@@ -70,6 +73,7 @@ model Video {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   channel           Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  cryptoAnalyses    CryptoAnalysis[]
 
   @@index([channelId, publishedAt(sort: Desc)])
   @@index([hasTranscript])
@@ -87,4 +91,92 @@ model Idea {
   updatedAt      DateTime @updatedAt
 
   @@index([createdAt(sort: Desc)])
+}
+
+model CryptoAnalysis {
+  id             Int      @id @default(autoincrement())
+  videoId        Int
+  channelId      Int
+  transcriptHash String
+  model          String
+  promptVersion  String
+  relevant       Boolean
+  resultJson     String
+  createdAt      DateTime @default(now())
+  video          Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  channel        Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([videoId, transcriptHash, model, promptVersion])
+  @@index([channelId, createdAt])
+}
+
+model CryptoCalibration {
+  id            Int      @id @default(autoincrement())
+  channelId     Int
+  version       Int
+  coverageHash  String
+  profileJson   String
+  createdAt     DateTime @default(now())
+  channel       Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, version])
+}
+
+model CryptoChannelSettings {
+  channelId     Int      @id
+  overridesJson String   @default("{}")
+  updatedAt     DateTime @updatedAt
+  channel       Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+}
+
+model CryptoJob {
+  id             String   @id @default(cuid())
+  kind           String
+  status         String   @default("queued")
+  paramsJson     String
+  checkpointJson String   @default("{}")
+  message        String   @default("")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  items          CryptoJobItem[]
+
+  @@index([status, createdAt])
+}
+
+model CryptoJobItem {
+  id             Int      @id @default(autoincrement())
+  jobId          String
+  youtubeVideoId String
+  status         String   @default("pending")
+  attempts       Int      @default(0)
+  error          String?
+  updatedAt      DateTime @updatedAt
+  job            CryptoJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, youtubeVideoId])
+}
+
+model CryptoCandle {
+  id        Int      @id @default(autoincrement())
+  asset     String
+  day       DateTime
+  open      Float
+  high      Float
+  low       Float
+  close     Float
+  volume    Float
+  source    String   @default("coinbase")
+  fetchedAt DateTime @default(now())
+
+  @@unique([asset, day])
+}
+
+model CryptoPriceWindow {
+  id        Int      @id @default(autoincrement())
+  asset     String
+  start     DateTime
+  end       DateTime
+  fetchedAt DateTime @default(now())
+
+  @@unique([asset, start, end])
 }

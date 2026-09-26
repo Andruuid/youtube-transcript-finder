@@ -1,4 +1,6 @@
 import express from 'express';
+import { cryptoRouter } from './src/routes/cryptoRoutes.js';
+import { initializeCryptoWorker } from './src/services/cryptoJobService.js';
 import { prisma } from './src/db/prismaClient.js';
 import {
   assertVideoId,
@@ -93,6 +95,7 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.use(createAccessAuthMiddleware());
+app.use('/api/crypto', cryptoRouter);
 
 app.get('/transcript/:videoId', async (req, res) => {
   const { videoId } = req.params;
@@ -608,6 +611,7 @@ async function startServer() {
 
   const server = app.listen(PORT, () => {
     console.log(`Transcript server listening on http://localhost:${PORT}`);
+    initializeCryptoWorker().catch(error => console.error('[crypto] Run Prisma migrations before using Crypto:', error.message));
   });
 
   server.on('error', (err) => {

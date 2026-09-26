@@ -24,7 +24,7 @@ function getYouTubeApiKey() {
 async function fetchYouTube(path, params) {
   const apiKey = getYouTubeApiKey();
   const qp = new URLSearchParams({ ...params, key: apiKey });
-  const res = await fetch(`${YOUTUBE_API_BASE}/${path}?${qp.toString()}`);
+  const res = await fetch(`${YOUTUBE_API_BASE}/${path}?${qp.toString()}`, { signal: AbortSignal.timeout(30000) });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`YouTube API ${path} failed: ${text || res.status}`);
