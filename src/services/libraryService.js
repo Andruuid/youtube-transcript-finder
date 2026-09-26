@@ -9,7 +9,9 @@ async function parseJsonResponse(res, fallbackMessage) {
     body = {};
   }
   if (!res.ok) {
-    throw new Error(body.error || raw || fallbackMessage);
+    const error = new Error(body.error || raw || fallbackMessage);
+    error.code = body.code;
+    throw error;
   }
   return body;
 }

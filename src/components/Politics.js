@@ -6,6 +6,7 @@ import React, {
   useState
 } from 'react';
 import ChannelAvatar from './ChannelAvatar';
+import { isTranscriptAccessError } from '../utils/transcriptErrors';
 import TranscriptReaderModal from './TranscriptReaderModal';
 import { syncCatalogThenFetchMissingTranscripts } from '../services/channelBulkPipeline';
 import { downloadTranscript } from '../services/libraryService';
@@ -503,6 +504,13 @@ export default function Politics() {
           channelTitle: channel.title,
           message: collectionError.message || 'Channel collection failed'
         });
+        if (isTranscriptAccessError(collectionError)) {
+          downloaded += channelDownloaded;
+          skipped += channelSkipped;
+          failures.push(...stoppedChannelFailures);
+          stopped = true;
+          break;
+        }
       }
 
       const collectionSnapshot = {

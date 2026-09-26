@@ -117,6 +117,7 @@ app.get('/transcript/:videoId', async (req, res) => {
     const message = e?.message || String(e);
     console.error('[transcript]', videoId, message);
     return res.status(500).json({
+      code: e?.code,
       error:
         message.includes('disabled') || message.includes('not available')
           ? 'Transcript not available for this video (YouTube may block or omit captions).'
@@ -455,7 +456,7 @@ app.post('/api/videos/:youtubeVideoId/download-transcript', async (req, res) => 
     });
   } catch (error) {
     const message = error?.message || String(error);
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: message, code: error?.code });
   }
 });
 

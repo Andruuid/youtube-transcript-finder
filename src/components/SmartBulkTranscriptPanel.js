@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { syncCatalogThenFetchMissingTranscripts } from '../services/channelBulkPipeline';
 
 const TARGET_MIN = 1;
@@ -16,11 +16,17 @@ export default function SmartBulkTranscriptPanel({
   const [busy, setBusy] = useState(false);
   const [line, setLine] = useState('');
   const [error, setError] = useState('');
+  const abortRef = useRef(null);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const clampTarget = (n) =>
     Math.min(TARGET_MAX, Math.max(TARGET_MIN, Number.isFinite(n) ? Math.floor(n) : TARGET_MIN));
 
   const run = async () => {
+    if (abortRef.current) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     const n = clampTarget(targetCount);
     setTargetCount(n);
     setBusy(true);
@@ -32,8 +38,9 @@ export default function SmartBulkTranscriptPanel({
         channelInput: youtubeChannelId,
         youtubeChannelId,
         targetCount: n,
+        signal: controller.signal,
         onProgress: (ev) => {
-          if (ev?.message) setLine(ev.message);
+          if (!controller.signal.aborted && ev?.message) setLine(ev.message);
         }
       });
       const fails = result.transcriptFailures || [];
@@ -47,13 +54,23 @@ export default function SmartBulkTranscriptPanel({
       }
       summary += `. Target newest ${n} videos — refresh counts above.`;
       setLine(summary);
-      await onFinished?.();
     } catch (e) {
-      setError(e?.message || 'Bulk sync/download failed');
-      setLine('');
+      if (controller.signal.aborted || e?.name === 'AbortError') {
+        setLine('Stopped. Saved transcripts are kept. Start again to fetch the remaining ones.');
+        setError('');
+      } else {
+        setError(e?.message || 'Bulk sync/download failed');
+        setLine('');
+      }
     } finally {
+      abortRef.current = null;
       setBusy(false);
       onBusyChange?.(false);
+      try {
+        await onFinished?.();
+      } catch (refreshError) {
+        setError((previous) => previous || refreshError?.message || 'Could not refresh channel counts');
+      }
     }
   };
 
@@ -95,8 +112,16 @@ export default function SmartBulkTranscriptPanel({
         >
           {busy ? 'Working…' : 'Sync pages & fill transcripts'}
         </button>
+        <button
+          type="button"
+          className="search-button channel-smart-bulk-button"
+          onClick={() => abortRef.current?.abort()}
+          disabled={!busy}
+        >
+          Stop
+        </button>
       </div>
-      {line && <p className="channel-smart-bulk-status">{line}</p>}
+      {line && <p className="channel-smart-bulk-status" role="status">{line}</p>}
       {error && <p className="error-message channel-bulk-status">{error}</p>}
     </div>
   );

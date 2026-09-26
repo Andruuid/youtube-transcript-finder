@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TranscriptReaderModal from './TranscriptReaderModal';
 import ChannelAvatar from './ChannelAvatar';
+import { isTranscriptAccessError } from '../utils/transcriptErrors';
 import './TranscriptLibrary.css';
 import {
   backfillVideoDurations,
@@ -475,8 +476,10 @@ export default function TranscriptLibrary() {
         } catch (err) {
           failures.push({
             id: video.youtubeVideoId,
-            message: err?.message || String(err)
+            message: isTranscriptAccessError(err)
+              ? `Remaining downloads stopped. ${err.message}` : err?.message || String(err)
           });
+          if (isTranscriptAccessError(err)) break;
         }
       }
 

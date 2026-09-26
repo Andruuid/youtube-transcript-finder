@@ -3,6 +3,7 @@ import {
   listNewestChannelVideos,
   syncChannel
 } from './libraryService';
+import { isTranscriptAccessError } from '../utils/transcriptErrors';
 
 const YT_PAGE = 50;
 
@@ -114,6 +115,10 @@ export async function downloadMissingTranscriptsSequential(
         throw abortError();
       }
       const message = err?.message || String(err);
+      if (isTranscriptAccessError(err)) {
+        err.message = `Stopped after saving ${downloaded} transcript(s). Remaining downloads were not attempted. ${message}`;
+        throw err;
+      }
       failures.push({
         youtubeVideoId: v.youtubeVideoId,
         title: v.title || '',

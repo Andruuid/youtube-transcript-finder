@@ -21,6 +21,21 @@ Channel import and sync call the backend server, which reads `YOUTUBE_API_KEY` f
 
 ## Local development
 
+### YouTube transcript sign-in
+
+If YouTube asks to confirm you are not a bot, sign in to YouTube in your browser
+and export **youtube.com only** in Netscape cookies.txt format. Save the export as
+`server/youtube.cookies.txt`. Do not use an all-sites export: it can contain
+conflicting sessions. This file is gitignored and read on every download, so
+replacing it does not require a restart. Keep it private; it contains your session.
+
+The downloader authenticates player requests and refreshes caption URLs when the
+watch page returns empty captions. If YouTube still blocks requests, bulk jobs
+stop and keep completed downloads. Replace expired cookies or wait before retrying;
+rerunning the job skips transcripts already saved. `YOUTUBE_COOKIE` or
+`YOUTUBE_COOKIES` in the server environment overrides the file and needs a restart
+when changed.
+
 In the project root, run:
 
 ### `npm run dev:full`

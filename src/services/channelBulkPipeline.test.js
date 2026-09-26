@@ -16,8 +16,21 @@ jest.mock('./libraryService', () => ({
 }));
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  jest.resetAllMocks();
 });
+
+test.each(['YOUTUBE_BOT_CHECK', 'YOUTUBE_AUTH_REQUIRED', 'YOUTUBE_CAPTIONS_BLOCKED'])(
+  'stops the batch on %s and preserves completed work', async (code) => {
+    downloadTranscript.mockResolvedValueOnce({ transcript: 'Saved' })
+      .mockRejectedValueOnce(Object.assign(new Error('Refresh cookies'), { code }));
+    await expect(downloadMissingTranscriptsSequential([
+      { youtubeVideoId: 'saved', hasTranscript: false },
+      { youtubeVideoId: 'blocked', hasTranscript: false },
+      { youtubeVideoId: 'unattempted', hasTranscript: false }
+    ])).rejects.toMatchObject({ code, message: expect.stringContaining('saving 1 transcript') });
+    expect(downloadTranscript).toHaveBeenCalledTimes(2);
+  }
+);
 
 test('refreshes enough newest catalog pages even when rows already exist', async () => {
   syncChannel
@@ -141,4 +154,18 @@ test('stops before starting work when its abort signal is already cancelled', as
     )
   ).rejects.toMatchObject({ name: 'AbortError' });
   expect(downloadTranscript).not.toHaveBeenCalled();
+});
+
+test('cancels an in-flight download without starting the next video', async () => {
+  const controller = new AbortController();
+  downloadTranscript.mockImplementationOnce((_id, { signal }) => new Promise((resolve, reject) => {
+    signal.addEventListener('abort', () => reject(Object.assign(new Error('Cancelled'), { name: 'AbortError' })));
+  }));
+  const batch = downloadMissingTranscriptsSequential([
+    { youtubeVideoId: 'current', hasTranscript: false },
+    { youtubeVideoId: 'next', hasTranscript: false }
+  ], undefined, { signal: controller.signal });
+  controller.abort();
+  await expect(batch).rejects.toMatchObject({ name: 'AbortError' });
+  expect(downloadTranscript).toHaveBeenCalledTimes(1);
 });
