@@ -147,6 +147,9 @@ export default function ChannelMonitor() {
     () => channels.filter((c) => selectedChannelIds.has(c.youtubeChannelId)),
     [channels, selectedChannelIds]
   );
+  const selectedChannelIdsKey = selectedChannels
+    .map((c) => c.youtubeChannelId)
+    .join(',');
 
   const focusedChannel = useMemo(
     () => channels.find((c) => c.youtubeChannelId === selectedChannelId),
@@ -223,6 +226,32 @@ export default function ChannelMonitor() {
   }, [loadChannels]);
 
   useEffect(() => {
+    if (!smartBulkBusy) return undefined;
+
+    let active = true;
+    let pending = false;
+    const refreshCounts = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const loaded = await listChannels();
+        if (active) setChannels(loaded);
+      } catch {
+        // The final refresh reports errors when the bulk job ends.
+      } finally {
+        pending = false;
+      }
+    };
+
+    void refreshCounts();
+    const interval = setInterval(refreshCounts, 3000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [smartBulkBusy]);
+
+  useEffect(() => {
     if (!persistSelectionRef.current) return;
     writeStoredSelectedChannelIds(selectedChannelIds);
   }, [selectedChannelIds]);
@@ -234,9 +263,7 @@ export default function ChannelMonitor() {
 
   /** Load merged video rows for checked channels (no loading UI); used after YouTube sync inside bulk actions. */
   const fetchMergedVideosSnapshot = useCallback(async () => {
-    const ids = channels
-      .filter((c) => selectedChannelIds.has(c.youtubeChannelId))
-      .map((c) => c.youtubeChannelId);
+    const ids = selectedChannelIdsKey ? selectedChannelIdsKey.split(',') : [];
     if (!ids.length) return [];
     if (searchTerm.trim()) {
       const allResults = await searchLibrary(searchTerm.trim(), '');
@@ -250,13 +277,10 @@ export default function ChannelMonitor() {
       ids.map((id) => listAllChannelVideos(id, statusFilter))
     );
     return mergeVideosById(batches.flat());
-  }, [channels, selectedChannelIds, searchTerm, statusFilter]);
+  }, [selectedChannelIdsKey, searchTerm, statusFilter]);
 
   const refreshVideos = useCallback(async () => {
-    const ids = channels
-      .filter((c) => selectedChannelIds.has(c.youtubeChannelId))
-      .map((c) => c.youtubeChannelId);
-    if (!ids.length) {
+    if (!selectedChannelIdsKey) {
       setVideos([]);
       return;
     }
@@ -270,7 +294,7 @@ export default function ChannelMonitor() {
     } finally {
       setLoading(false);
     }
-  }, [channels, selectedChannelIds, fetchMergedVideosSnapshot]);
+  }, [selectedChannelIdsKey, fetchMergedVideosSnapshot]);
 
   useEffect(() => {
     refreshVideos();
@@ -783,7 +807,10 @@ export default function ChannelMonitor() {
                           {selectedChannelId === c.youtubeChannelId ? ' (focused)' : ''}
                         </span>
                         <span className="channel-saved-meta">
-                          Downloaded {c.downloadedCount} / {c.totalCount}
+                          Downloaded{' '}
+                          <span className="channel-saved-count">
+                            {c.downloadedCount} / {c.totalCount}
+                          </span>
                         </span>
                       </span>
                     </button>
