@@ -39,9 +39,11 @@ export default function SmartBulkTranscriptPanel({
       const fails = result.transcriptFailures || [];
       let summary = `Done: ${result.transcriptsDownloaded} transcript(s) downloaded`;
       if (fails.length > 0) {
-        summary += `; ${fails.length} failed (e.g. captions disabled)`;
-        const ids = fails.map((f) => f.youtubeVideoId).join(', ');
-        summary += `: ${ids}`;
+        const firstMessage = fails[0]?.message || 'captions unavailable';
+        const sameMessage = fails.every((failure) => failure.message === firstMessage);
+        summary += sameMessage
+          ? `; ${fails.length} failed. ${firstMessage}`
+          : `; ${fails.length} failed. First error: ${firstMessage}`;
       }
       summary += `. Target newest ${n} videos — refresh counts above.`;
       setLine(summary);

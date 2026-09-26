@@ -609,9 +609,14 @@ export default function ChannelMonitor() {
 
       await refreshVideos();
 
+      const firstFailure = failures[0]?.message || '';
+      const sameFailure =
+        failures.length > 0 && failures.every((failure) => failure.message === firstFailure);
       const failNote =
         failures.length > 0
-          ? ` ${failures.length} failed (${failures.map((f) => f.id).join(', ')}).`
+          ? sameFailure
+            ? ` ${failures.length} failed. ${firstFailure}`
+            : ` ${failures.length} failed (${failures.map((f) => f.id).join(', ')}).`
           : '';
       const totalFail = failures.length === selectedVideos.length;
       setBulkDownload({
@@ -621,7 +626,11 @@ export default function ChannelMonitor() {
           : baseDir
             ? `Saved ${savedCount} file(s) into ${folderByChannel.size} folder(s); ${dbOkCount} transcript(s) in the database.${failNote}`
             : `Saved ${dbOkCount} transcript(s) to the database.${failNote}`,
-        error: totalFail ? failures.map((f) => `${f.id}: ${f.message}`).join(' ') : '',
+        error: totalFail
+          ? sameFailure
+            ? firstFailure
+            : failures.map((f) => `${f.id}: ${f.message}`).join(' ')
+          : '',
         partialFailures: !totalFail && failures.length > 0
       });
     } catch (e) {

@@ -1,5 +1,5 @@
-import { YoutubeTranscript } from 'youtube-transcript/dist/youtube-transcript.esm.js';
 import { prisma } from '../db/prismaClient.js';
+import { fetchYouTubeTranscriptText } from './youtubeTranscriptFetch.js';
 
 const VIDEO_ID_RE = /^[a-zA-Z0-9_-]{11}$/;
 
@@ -11,8 +11,7 @@ export function assertVideoId(videoId) {
 
 export async function fetchTranscriptText(videoId) {
   assertVideoId(videoId);
-  const chunks = await YoutubeTranscript.fetchTranscript(videoId);
-  return chunks.map((chunk) => chunk.text).join(' ');
+  return fetchYouTubeTranscriptText(videoId);
 }
 
 export async function saveTranscriptForVideo(videoId, transcriptText) {
