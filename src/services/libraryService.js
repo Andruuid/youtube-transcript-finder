@@ -14,11 +14,22 @@ async function parseJsonResponse(res, fallbackMessage) {
   return body;
 }
 
-export async function syncChannel(channelInput, limit = 50, pageToken = '') {
+export async function syncChannel(
+  channelInput,
+  limit = 50,
+  pageToken = '',
+  { signal, minDurationSeconds = 0 } = {}
+) {
   const res = await apiFetch('/api/channels/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ channelInput, limit, pageToken })
+    body: JSON.stringify({
+      channelInput,
+      limit,
+      pageToken,
+      minDurationSeconds
+    }),
+    signal
   });
   return parseJsonResponse(res, 'Failed to sync channel');
 }
@@ -42,7 +53,7 @@ export async function listChannelVideosPage(
   status = 'all',
   skip = 0,
   take = 200,
-  { fields = 'list' } = {}
+  { fields = 'list', signal, minDurationSeconds = 0 } = {}
 ) {
   const cappedTake = Math.min(Math.max(Number(take) || 200, 1), 200);
   const safeSkip = Math.max(Number(skip) || 0, 0);
@@ -52,7 +63,14 @@ export async function listChannelVideosPage(
     take: String(cappedTake),
     fields: fields === 'full' ? 'full' : 'list'
   });
-  const res = await apiFetch(`/api/channels/${encodeURIComponent(youtubeChannelId)}/videos?${qp}`);
+  const minimumDuration = Math.max(Number(minDurationSeconds) || 0, 0);
+  if (minimumDuration > 0) {
+    qp.set('minDurationSeconds', String(Math.floor(minimumDuration)));
+  }
+  const res = await apiFetch(
+    `/api/channels/${encodeURIComponent(youtubeChannelId)}/videos?${qp}`,
+    { signal }
+  );
   const data = await parseJsonResponse(res, 'Failed to load channel videos');
   const items = data.items || [];
   const total = typeof data.total === 'number' ? data.total : items.length + safeSkip;
@@ -65,15 +83,25 @@ export async function listChannelVideos(youtubeChannelId, status = 'all') {
   return items;
 }
 
-export async function getChannelVideoTotal(youtubeChannelId, status = 'all') {
-  const { total } = await listChannelVideosPage(youtubeChannelId, status, 0, 1);
+export async function getChannelVideoTotal(
+  youtubeChannelId,
+  status = 'all',
+  { signal } = {}
+) {
+  const { total } = await listChannelVideosPage(
+    youtubeChannelId,
+    status,
+    0,
+    1,
+    { signal }
+  );
   return total;
 }
 
 export async function listAllChannelVideos(
   youtubeChannelId,
   status = 'all',
-  { fields = 'list' } = {}
+  { fields = 'list', signal } = {}
 ) {
   const take = 200;
   let skip = 0;
@@ -81,7 +109,8 @@ export async function listAllChannelVideos(
   let total = Infinity;
   while (skip < total) {
     const page = await listChannelVideosPage(youtubeChannelId, status, skip, take, {
-      fields
+      fields,
+      signal
     });
     total = page.total;
     out.push(...page.items);
@@ -91,9 +120,36 @@ export async function listAllChannelVideos(
   return out;
 }
 
-export async function downloadTranscript(videoId) {
+export async function listNewestChannelVideos(
+  youtubeChannelId,
+  limit,
+  status = 'all',
+  { fields = 'list', signal, minDurationSeconds = 0 } = {}
+) {
+  const wanted = Math.max(Number(limit) || 1, 1);
+  const out = [];
+  let skip = 0;
+  let total = Infinity;
+  while (out.length < wanted && skip < total) {
+    const page = await listChannelVideosPage(
+      youtubeChannelId,
+      status,
+      skip,
+      Math.min(200, wanted - out.length),
+      { fields, signal, minDurationSeconds }
+    );
+    total = page.total;
+    out.push(...page.items);
+    if (page.items.length === 0) break;
+    skip += page.items.length;
+  }
+  return out.slice(0, wanted);
+}
+
+export async function downloadTranscript(videoId, { signal } = {}) {
   const res = await apiFetch(`/api/videos/${encodeURIComponent(videoId)}/download-transcript`, {
-    method: 'POST'
+    method: 'POST',
+    signal
   });
   return parseJsonResponse(res, 'Failed to download transcript');
 }

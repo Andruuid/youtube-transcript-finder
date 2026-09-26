@@ -6,6 +6,7 @@ export const APP_VIEWS = [
   { id: 'library', label: 'Transcript library' },
   { id: 'ideas', label: 'Ideas' },
   { id: 'niches', label: 'Niches' },
+  { id: 'politics', label: 'Politics' },
   { id: 'search', label: 'Search' }
 ];
 
@@ -21,6 +22,8 @@ export function viewSubtitle(viewId) {
       return 'Saved Ideas with star ratings';
     case 'niches':
       return 'Explore health, wealth, and relationship markets and niches';
+    case 'politics':
+      return 'Build a balanced, user-curated political transcript corpus';
     default:
       return '';
   }

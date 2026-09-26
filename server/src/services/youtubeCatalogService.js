@@ -111,8 +111,8 @@ export async function resolveChannel(rawInput) {
   const parsed = parseChannelInput(rawInput);
   const params =
     parsed.type === 'id'
-      ? { part: 'snippet', id: parsed.channelId }
-      : { part: 'snippet', forHandle: parsed.handle };
+      ? { part: 'snippet,contentDetails', id: parsed.channelId }
+      : { part: 'snippet,contentDetails', forHandle: parsed.handle };
   const data = await fetchYouTube('channels', params);
   const item = data.items?.[0];
   if (!item) {
@@ -123,23 +123,17 @@ export async function resolveChannel(rawInput) {
     youtubeChannelId: item.id,
     title: item.snippet?.title || rawInput.trim(),
     handle: parsed.type === 'handle' ? parsed.handle : null,
+    uploadsPlaylistId: item.contentDetails?.relatedPlaylists?.uploads || null,
     thumbnailUrl:
       thumbs?.medium?.url || thumbs?.default?.url || thumbs?.high?.url || null
   };
 }
 
-export async function fetchChannelVideos(youtubeChannelId, limit = 50, pageToken = '') {
-  const cappedLimit = Math.min(Math.max(Number(limit) || 50, 1), 50);
-  const channelData = await fetchYouTube('channels', {
-    part: 'contentDetails',
-    id: youtubeChannelId
-  });
-  const uploadsPlaylistId =
-    channelData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+export async function fetchChannelVideos(uploadsPlaylistId, limit = 50, pageToken = '') {
   if (!uploadsPlaylistId) {
-    throw new Error('Could not find the channel uploads playlist');
+    throw new Error('Channel has no accessible uploads playlist');
   }
-
+  const cappedLimit = Math.min(Math.max(Number(limit) || 50, 1), 50);
   const params = {
     part: 'contentDetails',
     playlistId: uploadsPlaylistId,

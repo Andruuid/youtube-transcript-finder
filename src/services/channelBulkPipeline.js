@@ -1,61 +1,93 @@
 import {
   downloadTranscript,
-  getChannelVideoTotal,
-  listAllChannelVideos,
+  listNewestChannelVideos,
   syncChannel
 } from './libraryService';
 
 const YT_PAGE = 50;
 
 /**
- * Pulls sequential YouTube catalog pages (50 ids max each) until the library has at least
- * `targetCount` rows for this channel, or the API returns no further page.
+ * Refreshes sequential uploads-playlist pages until the newest `targetCount`
+ * catalog entries have been visited, or YouTube returns no further page.
  */
 export async function ensureCatalogDepth(
   channelInput,
   youtubeChannelId,
   targetCount,
-  onProgress
+  onProgress,
+  { signal, minDurationSeconds = 0 } = {}
 ) {
-  let knownTotal = await getChannelVideoTotal(youtubeChannelId, 'all');
-  if (knownTotal >= targetCount) {
-    onProgress?.({
-      step: 'catalog-skip',
-      totalCount: knownTotal,
-      message: `Already have ${knownTotal} video(s) in the library (target ${targetCount}). Skipping YouTube catalog pulls.`
-    });
-    return {
-      totalCount: knownTotal,
-      nextPageToken: null,
-      syncedVideos: 0,
-      channel: null
-    };
-  }
-
   let pageToken = '';
   let last = null;
-  while (true) {
-    last = await syncChannel(channelInput, YT_PAGE, pageToken);
+  let catalogVideosVisited = 0;
+  let eligibleVideosVisited = 0;
+  const target = Math.max(Number(targetCount) || 1, 1);
+  const minimumDuration = Math.max(
+    Math.floor(Number(minDurationSeconds) || 0),
+    0
+  );
+  while (eligibleVideosVisited < target) {
+    throwIfAborted(signal);
+    last = await syncChannel(channelInput, YT_PAGE, pageToken, {
+      signal,
+      minDurationSeconds: minimumDuration
+    });
+    catalogVideosVisited += last.syncedVideos || 0;
+    eligibleVideosVisited +=
+      typeof last.eligibleVideos === 'number'
+        ? last.eligibleVideos
+        : last.syncedVideos || 0;
     onProgress?.({
       step: 'catalog',
       syncedVideos: last.syncedVideos,
       totalCount: last.totalCount,
+      catalogVideosVisited,
+      eligibleVideosVisited,
       hasMore: Boolean(last.nextPageToken),
-      message: `Catalog page: added/updated ${last.syncedVideos} video row(s); ${last.totalCount} total in library.`
+      message:
+        minimumDuration > 0
+          ? `Catalog: scanned ${catalogVideosVisited} upload(s); ${Math.min(
+              eligibleVideosVisited,
+              target
+            )}/${target} meet the minimum length.`
+          : `Catalog: scanned ${Math.min(catalogVideosVisited, target)}/${target} newest video(s); ${last.totalCount} total stored.`
     });
-    if ((last.totalCount ?? 0) >= targetCount) break;
     if (!last.nextPageToken) break;
     pageToken = last.nextPageToken;
   }
-  return last;
+  return {
+    ...(last || {
+      totalCount: 0,
+      nextPageToken: null,
+      syncedVideos: 0,
+      channel: null
+    }),
+    catalogVideosVisited,
+    eligibleVideosVisited
+  };
 }
 
-export async function downloadMissingTranscriptsSequential(videos, onProgress) {
+function abortError() {
+  const error = new Error('Collection stopped');
+  error.name = 'AbortError';
+  return error;
+}
+
+function throwIfAborted(signal) {
+  if (signal?.aborted) throw abortError();
+}
+
+export async function downloadMissingTranscriptsSequential(
+  videos,
+  onProgress,
+  { signal } = {}
+) {
   let downloaded = 0;
   let skipped = 0;
   /** @type {{ youtubeVideoId: string, title: string, message: string }[]} */
   const failures = [];
   for (const v of videos) {
+    throwIfAborted(signal);
     if (v.hasTranscript) {
       skipped += 1;
       onProgress?.({
@@ -68,7 +100,7 @@ export async function downloadMissingTranscriptsSequential(videos, onProgress) {
       continue;
     }
     try {
-      await downloadTranscript(v.youtubeVideoId);
+      await downloadTranscript(v.youtubeVideoId, { signal });
       downloaded += 1;
       onProgress?.({
         step: 'transcript',
@@ -78,6 +110,9 @@ export async function downloadMissingTranscriptsSequential(videos, onProgress) {
         message: `Downloaded transcript ${downloaded}: ${v.title || v.youtubeVideoId}`
       });
     } catch (err) {
+      if (err?.name === 'AbortError' || signal?.aborted) {
+        throw abortError();
+      }
       const message = err?.message || String(err);
       failures.push({
         youtubeVideoId: v.youtubeVideoId,
@@ -99,21 +134,32 @@ export async function downloadMissingTranscriptsSequential(videos, onProgress) {
 
 /**
  * 1) Ensures at least `targetCount` videos exist locally (newest-first via repeated sync).
- * 2) Among the newest `targetCount` rows, downloads transcripts only where missing.
+ * 2) Applies the optional minimum duration before selecting the newest `targetCount` rows.
+ * 3) Downloads transcripts only where missing.
  */
 export async function syncCatalogThenFetchMissingTranscripts({
   channelInput,
   youtubeChannelId,
   targetCount,
-  onProgress
+  minDurationSeconds = 0,
+  onProgress,
+  signal
 }) {
-  await ensureCatalogDepth(channelInput, youtubeChannelId, targetCount, onProgress);
-
-  const all = await listAllChannelVideos(youtubeChannelId, 'all');
-  const sorted = [...all].sort(
-    (a, b) => new Date(b.publishedAt) - new Date(a.publishedAt)
+  await ensureCatalogDepth(
+    channelInput,
+    youtubeChannelId,
+    targetCount,
+    onProgress,
+    { signal, minDurationSeconds }
   );
-  const slice = sorted.slice(0, Math.min(targetCount, sorted.length));
+
+  throwIfAborted(signal);
+  const slice = await listNewestChannelVideos(
+    youtubeChannelId,
+    targetCount,
+    'all',
+    { signal, minDurationSeconds }
+  );
   const missing = slice.filter((v) => !v.hasTranscript).length;
 
   onProgress?.({
@@ -125,7 +171,8 @@ export async function syncCatalogThenFetchMissingTranscripts({
 
   const { downloaded, skipped, failures } = await downloadMissingTranscriptsSequential(
     slice,
-    onProgress
+    onProgress,
+    { signal }
   );
 
   if (failures.length > 0) {

@@ -1,10 +1,6 @@
 import express from 'express';
 import { prisma } from './src/db/prismaClient.js';
 import {
-  fetchChannelVideos,
-  resolveChannel
-} from './src/services/youtubeCatalogService.js';
-import {
   assertVideoId,
   fetchAndPersistTranscript,
   fetchTranscriptText
@@ -16,9 +12,17 @@ import {
   backfillMissingChannelThumbnails,
   formatChannelThumbnailUrl,
   getStoredChannelThumbnail,
-  persistChannelThumbnail,
   toThumbnailBuffer
 } from './src/services/channelThumbnailService.js';
+import { syncChannelCatalog } from './src/services/channelSyncService.js';
+import {
+  addPoliticsChannel,
+  getPoliticsBoard,
+  listPoliticsVideos,
+  movePoliticsChannel,
+  PoliticsError,
+  removePoliticsChannel
+} from './src/services/politicsService.js';
 import { importStructuredSummaries } from './src/services/structuredSummaryImportService.js';
 import {
   deleteIdea,
@@ -125,96 +129,22 @@ app.post('/api/channels/sync', async (req, res) => {
   const channelInput = String(req.body?.channelInput || '').trim();
   const limit = Number(req.body?.limit || 50);
   const pageToken = String(req.body?.pageToken || '').trim();
+  const minDurationSeconds = Math.max(
+    Math.floor(Number(req.body?.minDurationSeconds) || 0),
+    0
+  );
   if (!channelInput) {
     return res.status(400).json({ error: 'channelInput is required' });
   }
 
   try {
-    const channel = await resolveChannel(channelInput);
-    const upsertedChannel = await prisma.channel.upsert({
-      where: { youtubeChannelId: channel.youtubeChannelId },
-      create: {
-        youtubeChannelId: channel.youtubeChannelId,
-        title: channel.title,
-        handle: channel.handle,
-        thumbnailUrl: channel.thumbnailUrl,
-        lastSyncedAt: new Date()
-      },
-      update: {
-        title: channel.title,
-        handle: channel.handle,
-        thumbnailUrl: channel.thumbnailUrl,
-        lastSyncedAt: new Date()
-      }
-    });
-
-    if (channel.thumbnailUrl) {
-      try {
-        await persistChannelThumbnail(upsertedChannel.id, channel.thumbnailUrl);
-      } catch (error) {
-        console.warn(
-          '[channel-sync] thumbnail download failed',
-          channel.youtubeChannelId,
-          error?.message || error
-        );
-      }
-    }
-
-    const channelWithThumbnail = await prisma.channel.findUnique({
-      where: { id: upsertedChannel.id }
-    });
-
-    const { videos, nextPageToken } = await fetchChannelVideos(
-      channel.youtubeChannelId,
+    const result = await syncChannelCatalog({
+      channelInput,
       limit,
-      pageToken
-    );
-
-    for (const video of videos) {
-      await prisma.video.upsert({
-        where: { youtubeVideoId: video.youtubeVideoId },
-        create: {
-          channelId: upsertedChannel.id,
-          youtubeVideoId: video.youtubeVideoId,
-          title: video.title,
-          description: video.description,
-          publishedAt: new Date(video.publishedAt),
-          thumbnailUrl: video.thumbnailUrl,
-          durationSeconds: video.durationSeconds ?? null
-        },
-        update: {
-          channelId: upsertedChannel.id,
-          title: video.title,
-          description: video.description,
-          publishedAt: new Date(video.publishedAt),
-          thumbnailUrl: video.thumbnailUrl,
-          durationSeconds: video.durationSeconds ?? null
-        }
-      });
-    }
-
-    const counts = await prisma.video.groupBy({
-      by: ['hasTranscript'],
-      where: { channelId: upsertedChannel.id },
-      _count: { _all: true }
+      pageToken,
+      minDurationSeconds
     });
-    const downloadedCount =
-      counts.find((row) => row.hasTranscript)?._count._all || 0;
-    const totalCount = counts.reduce((acc, row) => acc + row._count._all, 0);
-
-    return res.json({
-      channel: {
-        youtubeChannelId: channelWithThumbnail.youtubeChannelId,
-        title: channelWithThumbnail.title,
-        handle: channelWithThumbnail.handle,
-        thumbnailUrl: formatChannelThumbnailUrl(channelWithThumbnail)
-      },
-      syncedVideos: videos.length,
-      totalCount,
-      downloadedCount,
-      undownloadedCount: totalCount - downloadedCount,
-      nextPageToken
-    });
+    return res.json(result);
   } catch (error) {
     return res.status(500).json({ error: error.message || 'Channel sync failed' });
   }
@@ -259,6 +189,83 @@ app.get('/api/channels', async (_req, res) => {
   });
 });
 
+function politicsErrorStatus(error) {
+  return error instanceof PoliticsError
+    ? error.statusCode
+    : error?.code === 'P2025'
+      ? 404
+      : 500;
+}
+
+app.get('/api/politics', async (_req, res) => {
+  try {
+    return res.json({ board: await getPoliticsBoard() });
+  } catch (error) {
+    return res.status(politicsErrorStatus(error)).json({
+      error: error?.message || 'Failed to load Politics board'
+    });
+  }
+});
+
+app.post('/api/politics/channels', async (req, res) => {
+  try {
+    const result = await addPoliticsChannel({
+      channelInput: req.body?.channelInput,
+      side: req.body?.side
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(politicsErrorStatus(error)).json({
+      error: error?.message || 'Failed to add Politics channel'
+    });
+  }
+});
+
+app.patch('/api/politics/channels/:youtubeChannelId', async (req, res) => {
+  try {
+    const board = await movePoliticsChannel(req.params.youtubeChannelId, {
+      side: req.body?.side,
+      position: req.body?.position
+    });
+    return res.json({ board });
+  } catch (error) {
+    return res.status(politicsErrorStatus(error)).json({
+      error: error?.message || 'Failed to move Politics channel'
+    });
+  }
+});
+
+app.delete('/api/politics/channels/:youtubeChannelId', async (req, res) => {
+  try {
+    const board = await removePoliticsChannel(req.params.youtubeChannelId);
+    return res.json({ ok: true, board });
+  } catch (error) {
+    return res.status(politicsErrorStatus(error)).json({
+      error: error?.message || 'Failed to remove Politics channel'
+    });
+  }
+});
+
+app.get('/api/politics/videos', async (req, res) => {
+  try {
+    const result = await listPoliticsVideos({
+      side: req.query.side,
+      youtubeChannelId: String(req.query.channelId || '').trim(),
+      status: req.query.status,
+      query: req.query.q,
+      from: req.query.from,
+      to: req.query.to,
+      skip: req.query.skip,
+      take: req.query.take
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(politicsErrorStatus(error)).json({
+      error: error?.message || 'Failed to load Politics videos'
+    });
+  }
+});
+
 app.get('/api/channels/:youtubeChannelId/thumbnail', async (req, res) => {
   const youtubeChannelId = String(req.params.youtubeChannelId || '').trim();
   if (!youtubeChannelId) {
@@ -282,6 +289,17 @@ app.delete('/api/channels/:youtubeChannelId', async (req, res) => {
     return res.status(400).json({ error: 'Missing channel id' });
   }
   try {
+    const politicsMembership = await prisma.politicsChannel.findFirst({
+      where: {
+        channel: { youtubeChannelId }
+      }
+    });
+    if (politicsMembership) {
+      return res.status(409).json({
+        error:
+          'Channel belongs to the Politics board. Remove it from Politics before deleting it from the library.'
+      });
+    }
     await prisma.channel.delete({
       where: { youtubeChannelId }
     });
@@ -301,6 +319,10 @@ app.get('/api/channels/:youtubeChannelId/videos', async (req, res) => {
   const status = String(req.query.status || 'all');
   const skip = Math.max(Number(req.query.skip || 0), 0);
   const take = Math.min(Math.max(Number(req.query.take || 100), 1), 200);
+  const minDurationSeconds = Math.max(
+    Math.floor(Number(req.query.minDurationSeconds) || 0),
+    0
+  );
 
   const channel = await prisma.channel.findUnique({
     where: { youtubeChannelId }
@@ -315,6 +337,9 @@ app.get('/api/channels/:youtubeChannelId/videos', async (req, res) => {
       ? { hasTranscript: true }
       : status === 'missing'
       ? { hasTranscript: false }
+      : {}),
+    ...(minDurationSeconds > 0
+      ? { durationSeconds: { gte: minDurationSeconds } }
       : {})
   };
   const fields = String(req.query.fields || 'list').toLowerCase() === 'full' ? 'full' : 'list';

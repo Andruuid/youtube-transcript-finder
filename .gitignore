@@ -29,3 +29,5 @@ yarn-error.log*
 # Local SQLite (Prisma) — never commit dev/prod DB files
 /server/prisma/**/*.db
 /server/prisma/**/*.db-journal
+/server/prisma/**/*.db-shm
+/server/prisma/**/*.db-wal
