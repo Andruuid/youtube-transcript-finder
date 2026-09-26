@@ -67,6 +67,8 @@ test('model pipeline uses references, bounded repair and grounded synthesis',asy
         assert.equal(schema.type,'object');
         assert.equal(schema.properties.start.minimum,1);
         assert.match(body.messages[1].content,/SOURCE PASSAGES/);
+        assert.equal(body.provider.require_parameters,true);
+        assert.match(body.messages[0].content,/Humor, irony and sarcasm/);
         return response(candidate());
       }});
       assert.equal(calls,1);
@@ -92,7 +94,7 @@ test('model pipeline uses references, bounded repair and grounded synthesis',asy
     await t.test('synthesis selects verified excerpts across multiple chunks',async()=>{
       const transcript='Bitcoin may rise. '.repeat(2500);
       let calls=0;
-      const result=await analyzeTranscript(transcript,{fetchImpl:async(url,options)=>{
+      const result=await analyzeTranscript(transcript,{chunkSize:36000,fetchImpl:async(url,options)=>{
         calls++;
         if(calls===3)assert.match(JSON.parse(options.body).messages[1].content,/start and end MUST be the same id/);
         return response(candidate({start:1,end:1}));
@@ -105,6 +107,32 @@ test('model pipeline uses references, bounded repair and grounded synthesis',asy
       const result=await analyzeTranscript('Cooking dinner. '.repeat(2500),{fetchImpl:async()=>response(irrelevant)});
       assert.equal(result.relevant,false);
       assert.deepEqual(result.evidence,[]);
+    });
+    await t.test('a typical long transcript fits one request with context intact',async()=>{
+      let calls=0;
+      const transcript='Bitcoin may rise. '.repeat(2500);
+      const result=await analyzeTranscript(transcript,{fetchImpl:async()=>{
+        calls++;return response(candidate({start:1,end:1}));
+      }});
+      assert.equal(calls,1);
+      validateAnalysis(result,transcript);
+    });
+    await t.test('a joking setup and retraction survive a chunk boundary together',async()=>{
+      const setup='Sell all your Bitcoin! ';
+      const correction='That was a joke, not a recommendation. ';
+      const transcript='Market discussion. '.repeat(1900)+setup+correction+'More discussion. '.repeat(100);
+      const chunkSize=transcript.indexOf(correction);
+      let calls=0;
+      const irrelevant={...candidate(),relevant:false,summary:'',scores:{overall:null,BTC:null,ETH:null,SOL:null},evidence:[],calls:[],actions:[]};
+      await analyzeTranscript(transcript,{chunkSize,fetchImpl:async(url,options)=>{
+        calls++;
+        if(calls<=2){
+          const prompt=JSON.parse(options.body).messages[1].content;
+          assert.ok(prompt.includes(setup.trim()));assert.ok(prompt.includes(correction.trim()));
+        }
+        return response(irrelevant);
+      }});
+      assert.equal(calls,3);
     });
   }finally{
     if(previousKey===undefined)delete process.env.OPENROUTER_API_KEY;

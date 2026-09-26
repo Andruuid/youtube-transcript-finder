@@ -42,6 +42,17 @@ ETH and SOL daily prices. Ivan on Tech is selected initially when present.
   `openai/gpt-6-luna` through the existing server `OPENROUTER_API_KEY`; there is no
   model fallback. Unchanged successful analyses are reused. The pending count is
   displayed before starting. This action incurs OpenRouter usage charges.
+- New analyses use **crypto-v4**, with explicit checks for irony, jokes,
+  retractions, guest attribution, and technology enthusiasm versus price outlook.
+  Ambiguous statements should be omitted, not turned into trades. Transcripts
+  cannot reliably convey every vocal cue; extraction confidence is not a forecast
+  probability. Larger transcript windows and overlapping boundary context preserve
+  more of the surrounding discussion.
+- Saved **crypto-v3** results stay visible and are marked as older analyses.
+  **Reanalyze older results** explicitly upgrades them and processes pending videos
+  in the selected date range, using paid AI calls. Old versions remain in the
+  database; the current version is preferred when available. Ordinary Analyze
+  reuses old successes. Failed upgrades retain the previous result.
 - **Import history** independently imports the selected channels' catalogs and
   missing transcripts back to the selected start date (January 2021 by default).
   Downloads use the same YouTube configuration as Channel Monitor. Unavailable
@@ -50,6 +61,8 @@ ETH and SOL daily prices. Ivan on Tech is selected initially when present.
   relative scores use only the preceding 365 days and require 20 earlier scores
   per channel/asset. Manual overrides are available in baseline settings and do
   not change raw scores or outcome calculations.
+  Calibration does not retrain the model or repair extraction errors. Unchanged
+  runs reuse the existing profile; a changed rolling-year profile is marked stale.
 - Click a chart point or ledger entry to inspect summaries, exact transcript
   evidence, explicit forecasts/actions, and the full saved transcript.
 - Select a 7/30/90-day outcome window. Entry is the first UTC daily open strictly
@@ -57,6 +70,9 @@ ETH and SOL daily prices. Ivan on Tech is selected initially when present.
   neutral, and merely descriptive statements are excluded from forecast accuracy.
   General crypto forecasts use BTC; coin-specific forecasts use that asset.
   Returns describe the asset, not a simulated trading strategy.
+  **Direction match** uses the selected fixed window, including forecasts with
+  different or unspecified deadlines. It is not horizon-matched forecast accuracy;
+  overlapping windows are not independent samples.
 
 Jobs survive tab changes and checkpoint their progress in SQLite. Restarted work
 is paused and can be resumed; provider authentication/quota failures pause work.
@@ -88,6 +104,19 @@ YouTube IDs), `from`, and `to` (UTC dates). Dashboard requests also accept
 
 Crypto backend tests include an isolated temporary database and mocked providers;
 they never modify the live library or call paid AI services.
+
+The [September 2026 data review](docs/crypto-data-review-2026-09-26.md) records the
+Ivan on Tech audit, actual calibration results, and prompt evaluation limitations.
+To reproduce the read-only corpus audit from the repository root:
+
+```powershell
+node --env-file=server/.env server/scripts/evaluateCrypto.js
+# Add --live to run the paid, bounded prompt comparison (at most 32 requests).
+```
+
+The report is written to `.local/crypto-evaluation.json`. The evaluation does not
+replace stored analyses. API analysis jobs also accept `reprocessLegacy: true`
+and an optional `limit` for controlled upgrades.
 
 ## Running locally
 

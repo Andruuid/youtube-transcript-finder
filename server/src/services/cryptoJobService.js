@@ -38,6 +38,10 @@ export async function createJob(input) {
     const kind = input.kind;
     if (!['analysis', 'calibration', 'history', 'prices'].includes(kind)) throw cryptoError('Unknown Crypto job type.');
     const persisted = { channelIds: params.channelIds, from: params.from, to: params.to };
+    if (input.reprocessLegacy != null) {
+      if (kind !== 'analysis' || typeof input.reprocessLegacy !== 'boolean') throw cryptoError('reprocessLegacy must be a boolean for analysis jobs.');
+      persisted.reprocessLegacy = input.reprocessLegacy;
+    }
     if (input.limit != null) {
       if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 10000) throw cryptoError('Invalid analysis limit.');
       persisted.limit = input.limit;
@@ -178,7 +182,9 @@ async function runJob(job, signal) {
   if (job.kind === 'history') await importCatalog(job, params, signal);
   await durations(params, signal);
   const rows = await loadRows(params);
-  let candidates = rows.filter(r => eligible(r.video) && (job.kind === 'history' ? !r.video.transcriptText?.trim() : r.video.transcriptText?.trim() && !r.analysis));
+  const reprocessLegacy = JSON.parse(job.paramsJson).reprocessLegacy === true;
+  let candidates = rows.filter(r => eligible(r.video) && (job.kind === 'history' ? !r.video.transcriptText?.trim()
+    : r.video.transcriptText?.trim() && (!r.analysis || (reprocessLegacy && r.analysis.promptVersion !== PROMPT_VERSION))));
   const limit = JSON.parse(job.paramsJson).limit;
   if (limit) {
     const existing = await prisma.cryptoJobItem.findMany({ where: { jobId: job.id }, select: { youtubeVideoId: true } });

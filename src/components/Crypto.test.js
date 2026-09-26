@@ -70,3 +70,15 @@ test('empty library and API errors are actionable',async()=>{
   expect(await screen.findByRole('alert')).toHaveTextContent('API unavailable');
   expect(screen.getByRole('button',{name:'Retry'})).toBeEnabled();
 });
+
+test('older saved results require explicit reanalysis and fixed-window outcomes are labeled accurately',async()=>{
+  const data=dashboard();data.coverage[0].legacy=1;
+  loadCryptoDashboard.mockResolvedValue(data);
+  render(<Crypto/>);
+  const upgrade=await screen.findByRole('button',{name:'Reanalyze older results'});
+  expect(screen.getByText('1 saved analyses use an older prompt.')).toBeInTheDocument();
+  expect(screen.getByRole('columnheader',{name:'Direction match'})).toBeInTheDocument();
+  expect(startCryptoJob).not.toHaveBeenCalled();
+  fireEvent.click(upgrade);
+  await waitFor(()=>expect(startCryptoJob).toHaveBeenCalledWith(expect.objectContaining({reprocessLegacy:true}),'analysis'));
+});

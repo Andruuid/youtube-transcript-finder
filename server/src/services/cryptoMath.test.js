@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DAY, parseSelection, eligible, calibratePoint, outcome, scorecards, hashText } from './cryptoMath.js';
+import { DAY, parseSelection, eligible, calibratePoint, calibrationProfile, outcome, scorecards, hashText } from './cryptoMath.js';
 import { validateAnalysis, chunks } from './cryptoAiService.js';
 import { parseCandles } from './cryptoPriceService.js';
 import { pageReachesStart, pauseForError } from './cryptoJobService.js';
@@ -56,6 +56,15 @@ test('calibration excludes same-time, future and old observations; requires 20 p
   assert.equal(JSON.stringify(point), before);
 });
 const published = '2023-01-01T00:00:00Z';
+test('current calibration expires old samples, excludes future data and preserves per-asset minimums', () => {
+  const now = Date.parse('2024-01-01T12:00:00Z');
+  const rows = Array.from({ length: 20 }, (_, i) => ({ publishedAt: new Date(now - (i + 1) * DAY), result: sample() }));
+  rows.push({ publishedAt: new Date(now + DAY), result: sample() });
+  rows.push({ publishedAt: new Date(now - 366 * DAY), result: sample() });
+  assert.deepEqual(calibrationProfile(rows, now).BTC, { samples: 20, baseline: 8 });
+  assert.deepEqual(calibrationProfile(rows, now).ETH, { samples: 0, baseline: null });
+  assert.deepEqual(calibrationProfile(rows.slice(0, 20), now + 365 * DAY).BTC, { samples: 0, baseline: null });
+});
 const candles = Array.from({ length: 90 }, (_, i) => ({ asset: 'BTC', day: new Date(Date.parse('2023-01-02') + i * DAY), open: 100, low: i === 3 ? 70 : 99, high: 120, close: 110 }));
 test('outcomes start strictly after publication including midnight and use complete UTC windows', () => {
   for (const horizon of [7,30,90]) {

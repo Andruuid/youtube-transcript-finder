@@ -1,4 +1,5 @@
 import { MODEL, SERIES, cryptoError } from './cryptoMath.js';
+import { MARKET_PROMPT_GUIDANCE } from './cryptoPromptGuidance.js';
 
 const text = { type: 'string' };
 const asset = { type: 'string', enum: SERIES };
@@ -28,6 +29,7 @@ Set conditional true for hypothetical or condition-dependent calls/actions. Incl
 Confidence is 0-1. Return the requested JSON only.`;
 
 export function chunks(text, size = 36000) {
+  if (!Number.isInteger(size) || size < 1) throw new RangeError('Chunk size must be a positive integer.');
   const result = [];
   for (let start = 0; start < text.length; start += size) result.push(text.slice(start, start + size));
   return result;
@@ -57,7 +59,7 @@ export function validateAnalysis(result, transcript) {
   return result;
 }
 
-export async function requestAnalysis(content, { signal, fetchImpl = fetch, schema = ANALYSIS_SCHEMA } = {}) {
+export async function requestAnalysis(content, { signal, fetchImpl = fetch, schema = ANALYSIS_SCHEMA, promptExtension = MARKET_PROMPT_GUIDANCE, onUsage } = {}) {
   if (!process.env.OPENROUTER_API_KEY) throw cryptoError('Set OPENROUTER_API_KEY in server/.env and restart the server.', 503, 'PROVIDER_AUTH');
   for (let attempt = 0; attempt < 3; attempt++) {
     signal?.throwIfAborted();
@@ -65,7 +67,8 @@ export async function requestAnalysis(content, { signal, fetchImpl = fetch, sche
       const response = await fetchImpl('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120000)]) : AbortSignal.timeout(120000),
         headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json', 'X-OpenRouter-Title': 'Crypto Research' },
-        body: JSON.stringify({ model: MODEL, messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content }],
+        body: JSON.stringify({ model: MODEL, messages: [{ role: 'system', content: SYSTEM + promptExtension }, { role: 'user', content }],
+          provider: { require_parameters: true },
           response_format: { type: 'json_schema', json_schema: { name: 'crypto_analysis', strict: true, schema } },
           max_tokens: 6500 })
       });
@@ -76,6 +79,7 @@ export async function requestAnalysis(content, { signal, fetchImpl = fetch, sche
         const code = [401, 402, 403].includes(status) ? 'PROVIDER_AUTH' : status === 429 ? 'PROVIDER_QUOTA' : 'PROVIDER_ERROR';
         throw cryptoError(message, status, code);
       }
+      onUsage?.(body.usage || {});
       const choice = body.choices?.[0];
       if (!choice?.message?.content || choice.finish_reason === 'length') throw cryptoError('The model returned an incomplete response. Retry this video.', 502, 'INVALID_AI_OUTPUT');
       try { return JSON.parse(choice.message.content); } catch { throw cryptoError('The model returned malformed JSON.', 502, 'INVALID_AI_OUTPUT'); }
@@ -92,10 +96,19 @@ export async function requestAnalysis(content, { signal, fetchImpl = fetch, sche
 }
 
 export async function analyzeTranscript(transcript, options = {}) {
-  const parts = chunks(transcript);
+  const parts = chunks(transcript, options.chunkSize ?? 64000);
   if (!parts.length) throw cryptoError('No transcript is available.', 400, 'MISSING_TRANSCRIPT');
   const analyses = [];
-  for (const part of parts) analyses.push(await requestVerified('Analyze this transcript.', part, options));
+  let offset = 0;
+  for (const part of parts) {
+    // Give a setup and its punchline/correction a chance to appear together even
+    // at chunk boundaries. Cut context on spaces so normal words stay intact.
+    let start = Math.max(0, offset - 1200), end = Math.min(transcript.length, offset + part.length + 1200);
+    if (start > 0) { const space = transcript.indexOf(' ', start); if (space >= 0 && space < offset) start = space + 1; }
+    if (end < transcript.length) { const space = transcript.lastIndexOf(' ', end); if (space > offset + part.length) end = space; }
+    analyses.push(await requestVerified('Analyze this transcript window. Adjacent windows may overlap. Preserve surrounding conditions, jokes and corrections; do not treat a setup alone as a sincere view.', transcript.slice(start, end), options));
+    offset += part.length;
+  }
   if (analyses.length === 1) return analyses[0];
   // Hierarchical synthesis keeps every chunk represented and every quote traceable.
   let level = analyses;

@@ -79,6 +79,14 @@ test('durable Crypto pipeline: restart recovery, deduplication, retries, revisio
     await t.test('calibration versions are persisted without changing raw scores',async()=>{
       const job=await createJob({...params,kind:'calibration'});await finished(job.id);
       const d=await dashboard(params);assert.equal(d.profiles[0].version,1);assert.equal(d.points[0].scores.overall,8);assert.equal(d.points[0].calibration.overall.adjusted,null);
+      const repeat=await createJob({...params,kind:'calibration'});await finished(repeat.id);
+      assert.equal(await prisma.cryptoCalibration.count(),1);
+      // The coverage hash alone cannot detect an expired rolling-window profile.
+      await prisma.cryptoCalibration.updateMany({data:{profileJson:JSON.stringify({overall:{samples:20,baseline:8}})}});
+      assert.equal((await dashboard(params)).profiles[0].stale,true);
+      const refresh=await createJob({...params,kind:'calibration'});await finished(refresh.id);
+      assert.equal((await dashboard(params)).profiles[0].version,2);
+      assert.equal((await dashboard(params)).profiles[0].stale,false);
     });
     await t.test('history checkpoints persist and a finished import is idempotent on resume',async()=>{
       const job=await createJob({...params,kind:'history'});assert.equal((await finished(job.id)).status,'complete');
@@ -104,6 +112,20 @@ test('durable Crypto pipeline: restart recovery, deduplication, retries, revisio
       assert.equal((await finished(job.id)).status,'paused');
       assert.equal((await prisma.cryptoJobItem.findFirst({where:{jobId:job.id}})).status,'pending');
       unauthorized=false;await controlJob(job.id,'resume');assert.equal((await finished(job.id)).status,'complete');
+    });
+    await t.test('legacy results stay visible until explicitly reprocessed; current version wins',async()=>{
+      const current=await prisma.cryptoAnalysis.findFirst({orderBy:{id:'desc'}});
+      await prisma.cryptoAnalysis.update({where:{id:current.id},data:{promptVersion:'crypto-v3'}});
+      let d=await dashboard(params);
+      assert.equal(d.coverage[0].analyzed,1);assert.equal(d.coverage[0].legacy,1);assert.equal(d.coverage[0].pending,0);
+      const before=modelCalls;
+      const normal=await createJob(params);await finished(normal.id);assert.equal(modelCalls,before);
+      const upgrade=await createJob({...params,reprocessLegacy:true,limit:1});
+      assert.equal((await finished(upgrade.id)).status,'complete');assert.equal(modelCalls,before+1);
+      d=await dashboard(params);assert.equal(d.coverage[0].legacy,0);assert.equal(d.points.length,1);
+      // Even a newer-created old-version row must not displace current output.
+      await prisma.cryptoAnalysis.update({where:{id:current.id},data:{createdAt:new Date(Date.now()+10000)}});
+      assert.equal((await loadRows(await selection(params)))[0].promptVersion,'crypto-v4');
     });
   } finally {
     globalThis.fetch=originalFetch;

@@ -1,5 +1,5 @@
 import { prisma } from '../db/prismaClient.js';
-import { MODEL, PROMPT_VERSION, DAY, SERIES, eligible, hashText, coverageHash, calibratePoint, median, scorecards, parseSelection, cryptoError } from './cryptoMath.js';
+import { MODEL, PROMPT_VERSION, READABLE_PROMPT_VERSIONS, DAY, SERIES, eligible, hashText, coverageHash, calibratePoint, calibrationProfile, scorecards, parseSelection, cryptoError } from './cryptoMath.js';
 
 export async function selection(input) {
   const params = parseSelection(input);
@@ -16,12 +16,13 @@ export function videoWhere(params, includeHistory = false) {
 
 export async function loadRows(params, includeHistory = false) {
   const videos = await prisma.video.findMany({ where: videoWhere(params, includeHistory), orderBy: { publishedAt: 'asc' },
-    include: { cryptoAnalyses: { where: { model: MODEL, promptVersion: PROMPT_VERSION }, orderBy: { createdAt: 'desc' } } } });
+    include: { cryptoAnalyses: { where: { model: MODEL, promptVersion: { in: READABLE_PROMPT_VERSIONS } }, orderBy: { createdAt: 'desc' } } } });
   return videos.map(video => {
     const transcriptHash = hashText(video.transcriptText);
-    const analysis = eligible(video) && video.transcriptText?.trim() ? video.cryptoAnalyses.find(a => a.transcriptHash === transcriptHash) || null : null;
+    const analysis = eligible(video) && video.transcriptText?.trim()
+      ? READABLE_PROMPT_VERSIONS.map(version => video.cryptoAnalyses.find(a => a.promptVersion === version && a.transcriptHash === transcriptHash)).find(Boolean) || null : null;
     return { video, analysis, ...(analysis ? { id: analysis.id, transcriptHash, channelId: video.channelId, youtubeVideoId: video.youtubeVideoId,
-      title: video.title, publishedAt: video.publishedAt, result: JSON.parse(analysis.resultJson) } : {}) };
+      title: video.title, publishedAt: video.publishedAt, promptVersion: analysis.promptVersion, result: JSON.parse(analysis.resultJson) } : {}) };
   });
 }
 
@@ -36,6 +37,7 @@ export async function getCoverage(params, loaded) {
     return { channelId: channel.id, youtubeChannelId: channel.youtubeChannelId, title: channel.title,
       cataloged: items.length, downloaded: downloaded.length, eligible: candidates.length,
       analyzed: items.filter(r => r.analysis).length, relevant: items.filter(r => r.analysis?.relevant).length,
+      legacy: items.filter(r => r.analysis && r.analysis.promptVersion !== PROMPT_VERSION).length,
       irrelevant: items.filter(r => r.analysis && !r.analysis.relevant).length,
       failed: candidates.filter(r => !r.analysis && failed.has(r.video.youtubeVideoId)).length,
       missing: candidates.filter(r => !r.video.transcriptText?.trim()).length,
@@ -52,12 +54,11 @@ export async function calibrateChannel(channelId) {
   const rows = (await loadRows(params)).filter(r => r.analysis);
   if (!rows.some(r => r.result.relevant)) throw cryptoError('Analyze relevant saved transcripts before calibrating.');
   const last = await prisma.cryptoCalibration.findFirst({ where: { channelId }, orderBy: { version: 'desc' } });
-  const recent = rows.filter(r => r.result.relevant && new Date(r.publishedAt).getTime() >= Date.now() - 365 * DAY);
-  const profile = Object.fromEntries(SERIES.map(s => {
-    const values = recent.map(r => r.result.scores[s]).filter(Number.isFinite);
-    return [s, { samples: values.length, baseline: values.length >= 20 ? median(values) : null }];
-  }));
-  return prisma.cryptoCalibration.create({ data: { channelId, version: (last?.version || 0) + 1, coverageHash: coverageHash(rows), profileJson: JSON.stringify(profile) } });
+  const profileJson = JSON.stringify(calibrationProfile(rows));
+  const hash = coverageHash(rows);
+  // Repeated clicks with unchanged inputs should not manufacture new versions.
+  if (last?.coverageHash === hash && last.profileJson === profileJson) return last;
+  return prisma.cryptoCalibration.create({ data: { channelId, version: (last?.version || 0) + 1, coverageHash: hash, profileJson } });
 }
 
 export async function dashboard(input) {
@@ -70,8 +71,10 @@ export async function dashboard(input) {
   const inRange = all.filter(r => r.video.publishedAt >= new Date(params.from) && r.video.publishedAt < new Date(Date.parse(params.to) + DAY));
   const profiles = params.channels.map(channel => {
     const profile = channel.cryptoCalibrations[0];
+    const channelHistory = history.filter(r => r.channelId === channel.id);
     return { channelId: channel.id, title: channel.title, version: profile?.version || null,
-      createdAt: profile?.createdAt || null, stale: !!profile && profile.coverageHash !== coverageHash(history.filter(r => r.channelId === channel.id)),
+      createdAt: profile?.createdAt || null, stale: !!profile && (profile.coverageHash !== coverageHash(channelHistory)
+        || profile.profileJson !== JSON.stringify(calibrationProfile(channelHistory))),
       profile: profile ? JSON.parse(profile.profileJson) : null, overrides: JSON.parse(channel.cryptoSettings?.overridesJson || '{}') };
   });
   const rows = inRange.filter(r => r.analysis);

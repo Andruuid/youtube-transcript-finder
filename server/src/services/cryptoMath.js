@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 
 export const MODEL = 'openai/gpt-6-luna';
-export const PROMPT_VERSION = 'crypto-v3';
+export const PROMPT_VERSION = 'crypto-v4';
+export const READABLE_PROMPT_VERSIONS = [PROMPT_VERSION, 'crypto-v3'];
 export const DAY = 86400000;
 export const SERIES = ['overall', 'BTC', 'ETH', 'SOL'];
 export const ASSETS = { BTC: 'BTC-USD', ETH: 'ETH-USD', SOL: 'SOL-USD' };
@@ -39,6 +40,15 @@ export function parseSelection(input) {
 
 export function coverageHash(rows) {
   return hashText(rows.map(r => `${r.id}:${r.transcriptHash}`).sort().join('|'));
+}
+
+export function calibrationProfile(rows, now = Date.now()) {
+  const recent = rows.filter(r => r.result.relevant && new Date(r.publishedAt).getTime() >= now - 365 * DAY
+    && new Date(r.publishedAt).getTime() <= now);
+  return Object.fromEntries(SERIES.map(series => {
+    const values = recent.map(r => r.result.scores[series]).filter(Number.isFinite);
+    return [series, { samples: values.length, baseline: values.length >= 20 ? median(values) : null }];
+  }));
 }
 
 /** Only observations strictly before this publication can influence its baseline. */
