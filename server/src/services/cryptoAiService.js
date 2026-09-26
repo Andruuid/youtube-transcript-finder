@@ -33,6 +33,36 @@ export function chunks(text, size = 36000) {
   return result;
 }
 const normalize = (value) => value.replace(/\s+/g, ' ').trim();
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const boundedQuote = (pattern, flags = 'u') => new RegExp(`(?<![\\p{L}\\p{M}\\p{N}_])(?<!\\d[.,])${pattern}(?![\\p{L}\\p{M}\\p{N}_]|[.,]\\d)`, flags);
+const containsQuote = (source, quote) => boundedQuote(escapeRegex(normalize(quote))).test(source);
+
+// Restore source spelling/formatting before strict validation. Never fuzzy-match
+// words: omissions, repetitions, negations and numbers must remain grounded.
+export function restoreSourceQuotes(result, source) {
+  if (!result || typeof result !== 'object') return result;
+  const normalizedSource = normalize(source);
+  const restore = (item) => {
+    if (!item || typeof item.quote !== 'string' || normalize(item.quote).length < 8) return item;
+    if (containsQuote(normalizedSource, item.quote)) return item;
+    // Models often add sentence punctuation to an excerpt ending mid-sentence.
+    const excerpt = item.quote.trim().replace(/[.!?]+$/, '');
+    if (normalize(excerpt).length < 8) return item;
+    const pattern = [...excerpt].map(char => {
+      if (/\s/u.test(char)) return '\\s+';
+      if (/[\u2018\u2019']/u.test(char)) return "['\u2018\u2019]";
+      if (/[\u201c\u201d"]/u.test(char)) return '["\u201c\u201d]';
+      return escapeRegex(char);
+    }).join('').replace(/(?:\\s\+)+/g, '\\s+');
+    // Do not match inside a word or truncate a number such as 40,000 or 1.5.
+    const match = boundedQuote(pattern, 'iu').exec(source);
+    return match ? { ...item, quote: match[0] } : item;
+  };
+  return { ...result, ...Object.fromEntries(['evidence', 'calls', 'actions']
+    .filter(key => Array.isArray(result[key]))
+    .map(key => [key, result[key].map(restore)])) };
+}
+
 export function validateAnalysis(result, transcript) {
   const fail = (message) => { throw cryptoError(`Invalid AI analysis: ${message}`, 502, 'INVALID_AI_OUTPUT'); };
   if (!result || typeof result.relevant !== 'boolean' || typeof result.reason !== 'string' || typeof result.summary !== 'string') fail('missing classification or summary');
@@ -41,7 +71,7 @@ export function validateAnalysis(result, transcript) {
   for (const key of ['evidence', 'calls', 'actions']) if (!Array.isArray(result[key])) fail(`missing ${key}`);
   const source = normalize(transcript);
   for (const item of [...result.evidence, ...result.calls, ...result.actions]) {
-    if (!SERIES.includes(item.asset) || typeof item.quote !== 'string' || normalize(item.quote).length < 8 || !source.includes(normalize(item.quote))) fail(`evidence quote is not in the transcript: ${JSON.stringify(item.quote)}`);
+    if (!item || !SERIES.includes(item.asset) || typeof item.quote !== 'string' || normalize(item.quote).length < 8 || !containsQuote(source, item.quote)) fail(`evidence quote is not in the transcript: ${JSON.stringify(item?.quote)}`);
   }
   for (const e of result.evidence) if (typeof e.explanation !== 'string') fail('missing evidence explanation');
   for (const c of result.calls) if (!['bullish', 'bearish', 'neutral'].includes(c.direction) || typeof c.horizon !== 'string' || typeof c.conditional !== 'boolean') fail('invalid directional call');
@@ -108,11 +138,11 @@ export async function analyzeTranscript(transcript, options = {}) {
 }
 
 async function requestVerified(content, source, options) {
-  const result = await requestAnalysis(content, options);
+  const result = restoreSourceQuotes(await requestAnalysis(content, options), source);
   try { return validateAnalysis(result, source); }
   catch (error) {
     if (error.code !== 'INVALID_AI_OUTPUT') throw error;
     const repaired = await requestAnalysis(`${content}\n\nYour previous candidate failed validation: ${error.message}\nPrevious candidate: ${JSON.stringify(result)}\nRepair it. Copy each evidence quote EXACTLY, including spoken filler and punctuation, from the source above. Do not rewrite quotes for readability. If you cannot find an exact supporting quote, remove that evidence/call/action and set its unsupported score to null. Check EVERY quote, not only the reported one. Return the complete corrected JSON.`, options);
-    return validateAnalysis(repaired, source);
+    return validateAnalysis(restoreSourceQuotes(repaired, source), source);
   }
 }
